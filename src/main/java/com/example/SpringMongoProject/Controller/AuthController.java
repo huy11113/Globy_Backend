@@ -130,4 +130,33 @@ public class AuthController {
             ));
         }
     }
+    // --- API MỚI CHO GOOGLE LOGIN ---
+
+    @PostMapping("/google/login")
+    public ResponseEntity<Map<String, Object>> loginWithGoogle(@RequestBody Map<String, String> payload) {
+        try {
+            String googleToken = payload.get("token");
+            if (googleToken == null || googleToken.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Google token is required."));
+            }
+
+            User user = authService.loginOrRegisterWithGoogle(googleToken);
+
+            // Tạo token của ứng dụng Globy (JWT) cho user
+            String appToken = jwtService.generateToken(user);
+            user.setPassword(null); // Không bao giờ trả về mật khẩu
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Đăng nhập bằng Google thành công!",
+                    "token", appToken,
+                    "data", user
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
 }

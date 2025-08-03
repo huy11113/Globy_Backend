@@ -24,16 +24,20 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Bật CORS lên đầu
-                .csrf(csrf -> csrf.disable()) // Tắt CSRF
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authorize -> authorize
-                        // --- Các API công khai cho trang chủ ---
+                        // Các API công khai
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/tours/**").permitAll()
                         .requestMatchers("/api/destinations/**").permitAll()
-                        // Tạm thời cho phép wishlist để test, sau này sẽ cần bảo vệ
+
+                        // Các API cần đăng nhập (tạm thời cho phép để test)
                         .requestMatchers("/api/wishlist/**").permitAll()
-                        // Các API khác yêu cầu đăng nhập (sẽ cấu hình sau với JWT)
+                        .requestMatchers("/api/bookings/**").permitAll()
+                        .requestMatchers("/api/users/**").permitAll()
+                        .requestMatchers("/api/hotels/**").permitAll()
+                        // Các API khác yêu cầu xác thực (nếu có)
                         .anyRequest().authenticated()
                 );
         return http.build();

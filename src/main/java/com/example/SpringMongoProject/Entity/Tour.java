@@ -12,7 +12,6 @@ import java.util.List;
 @Document(collection = "tours")
 public class Tour {
 
-    // Class con cho các mục trong lịch trình
     @Data
     public static class ItineraryItem {
         private Integer day;
@@ -20,20 +19,18 @@ public class Tour {
         private String details;
     }
 
-    // Class con cho các ngày khởi hành
     @Data
     public static class Departure {
         private Date date;
         private Integer seatsAvailable;
     }
 
-    // --- BẮT ĐẦU CÁC TRƯỜNG CỦA TOUR ---
-
     @Id
-    @JsonProperty("_id") // Đổi tên 'id' thành '_id' khi chuyển sang JSON
+    @JsonProperty("_id")
     private String id;
 
     private String title;
+    private String city; // <-- THÊM TRƯỜNG NÀY
     private String description;
     @DBRef
     private Destination destination;
