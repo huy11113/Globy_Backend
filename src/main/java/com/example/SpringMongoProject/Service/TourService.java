@@ -23,44 +23,46 @@ public class TourService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    /**
-     * Tìm kiếm, lọc, và phân trang cho Tour.
-     * Đáp ứng tất cả yêu cầu từ hook useTours.js và useDestinationDetail.js.
-     */
     public Page<Tour> findTours(String searchTerm, String sortBy, int page, int limit, Double maxPrice, Boolean featured, String destinationId) {
-        // Mặc định phân trang, sắp xếp theo ngày tạo mới nhất
-        Pageable pageable = PageRequest.of(page - 1, limit, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt"); // Mặc định
+        if (sortBy != null && !sortBy.isEmpty()) {
+            if (sortBy.startsWith("-")) {
+                sort = Sort.by(Sort.Direction.DESC, sortBy.substring(1));
+            } else {
+                sort = Sort.by(Sort.Direction.ASC, sortBy);
+            }
+        }
+        Pageable pageable = PageRequest.of(page - 1, limit, sort);
 
         Query query = new Query().with(pageable);
-
         // Thêm điều kiện tìm kiếm (search)
         if (searchTerm != null && !searchTerm.isEmpty()) {
+            // Tìm kiếm trong cả title VÀ city
             Criteria searchCriteria = new Criteria().orOperator(
-                    Criteria.where("title").regex(searchTerm, "i"), // 'i' for case-insensitive
-                    Criteria.where("city").regex(searchTerm, "i")
+                    Criteria.where("title").regex(searchTerm, "i"),
+                    Criteria.where("city").regex(searchTerm, "i") // <-- DÒNG NÀY ĐÃ ĐƯỢC THÊM VÀO
             );
             query.addCriteria(searchCriteria);
         }
 
-        // Thêm điều kiện lọc theo giá
+        if (searchTerm != null && !searchTerm.isEmpty()) {
+            query.addCriteria(new Criteria().orOperator(
+                    Criteria.where("title").regex(searchTerm, "i"),
+                    Criteria.where("city").regex(searchTerm, "i")
+            ));
+        }
         if (maxPrice != null) {
             query.addCriteria(Criteria.where("price").lte(maxPrice));
         }
-
-        // Thêm điều kiện lọc tour nổi bật
         if (featured != null) {
             query.addCriteria(Criteria.where("featured").is(featured));
         }
-
-        // Thêm điều kiện lọc theo destination ID
         if (destinationId != null && !destinationId.isEmpty()) {
             query.addCriteria(Criteria.where("destination._id").is(destinationId));
         }
 
-        // Thực thi câu lệnh
         List<Tour> tours = mongoTemplate.find(query, Tour.class);
 
-        // Trả về đối tượng Page chứa dữ liệu và thông tin phân trang
         return PageableExecutionUtils.getPage(
                 tours,
                 pageable,
@@ -68,9 +70,6 @@ public class TourService {
         );
     }
 
-    /**
-     * Tìm chi tiết một tour theo ID.
-     */
     public Tour findTourById(String id) {
         return tourRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tour với ID: " + id));

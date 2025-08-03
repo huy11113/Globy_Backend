@@ -16,18 +16,15 @@ public class TourController {
     @Autowired
     private TourService tourService;
 
-    /**
-     * API để lấy danh sách tour có hỗ trợ tìm kiếm, lọc, phân trang.
-     */
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllTours(
             @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "-createdAt") String sort,
+            @RequestParam(defaultValue = "-createdAt", required = false) String sort,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "9") int limit,
-            @RequestParam(name = "price[lte]", required = false) Double maxPrice, // Nhận từ 'price[lte]'
+            @RequestParam(name = "price[lte]", required = false) Double maxPrice,
             @RequestParam(required = false) Boolean featured,
-            @RequestParam(required = false) String destination // Nhận từ 'destination'
+            @RequestParam(required = false) String destination
     ) {
         Page<Tour> tourPage = tourService.findTours(search, sort, page, limit, maxPrice, featured, destination);
 
@@ -40,9 +37,6 @@ public class TourController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * API để lấy chi tiết một tour theo ID.
-     */
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getTourById(@PathVariable String id) {
         try {

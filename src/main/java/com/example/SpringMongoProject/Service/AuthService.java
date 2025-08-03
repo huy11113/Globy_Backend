@@ -2,19 +2,27 @@ package com.example.SpringMongoProject.Service;
 
 import com.example.SpringMongoProject.Entity.User;
 import com.example.SpringMongoProject.Repo.UserRepository;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.Random;
+import java.util.UUID;
 
 @Service
 public class AuthService {
 
     @Autowired
     private UserRepository userRepository;
-
+    @Value("${google.client.id}") // Lấy giá trị từ application.properties
+    private String googleClientId;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     /**
@@ -87,5 +95,45 @@ public class AuthService {
         user.setResetCode(null);
         userRepository.save(user);
         return true;
+    }
+    // --- PHƯƠI THỨC MỚI CHO GOOGLE LOGIN ---
+
+    /**
+     * Xác thực Google ID Token, sau đó đăng nhập hoặc đăng ký user mới.
+     * @param googleTokenString Google ID Token nhận được từ frontend.
+     * @return User tương ứng trong database.
+     */
+    public User loginOrRegisterWithGoogle(String googleTokenString) {
+        try {
+            // Khởi tạo bộ xác thực
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+
+            // Xác thực token
+            GoogleIdToken idToken = verifier.verify(googleTokenString);
+            if (idToken == null) {
+                throw new IllegalArgumentException("Token Google không hợp lệ.");
+            }
+
+            GoogleIdToken.Payload payload = idToken.getPayload();
+            String email = payload.getEmail();
+            String name = (String) payload.get("name");
+            String avatar = (String) payload.get("picture");
+
+            // Tìm user bằng email, nếu không có thì tạo mới
+            return userRepository.findByEmail(email).orElseGet(() -> {
+                User newUser = new User();
+                newUser.setEmail(email);
+                newUser.setName(name);
+                newUser.setAvatar(avatar);
+                newUser.setRole("user");
+                // Tạo một mật khẩu ngẫu nhiên mạnh vì user này sẽ không dùng đến nó
+                newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+                return userRepository.save(newUser);
+            });
+        } catch (Exception e) {
+            throw new RuntimeException("Xác thực Google thất bại: " + e.getMessage(), e);
+        }
     }
 }
