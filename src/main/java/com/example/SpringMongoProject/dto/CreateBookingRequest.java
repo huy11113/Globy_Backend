@@ -10,4 +10,7 @@ public class CreateBookingRequest {
     private Date startDate;
     private Integer people;
     private Double totalPrice;
+
+    // ✅ THÊM TRƯỜDNG MỚI Ở ĐÂY
+    private String notes;
 }
