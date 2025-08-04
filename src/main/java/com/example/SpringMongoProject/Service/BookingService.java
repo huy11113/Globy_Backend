@@ -1,10 +1,12 @@
 package com.example.SpringMongoProject.Service;
 
 import com.example.SpringMongoProject.Entity.Booking;
+import com.example.SpringMongoProject.Entity.Destination;
 import com.example.SpringMongoProject.Entity.Payment;
 import com.example.SpringMongoProject.Entity.Tour;
 import com.example.SpringMongoProject.Entity.User;
 import com.example.SpringMongoProject.Repo.BookingRepository;
+import com.example.SpringMongoProject.Repo.DestinationRepository;
 import com.example.SpringMongoProject.Repo.PaymentRepository;
 import com.example.SpringMongoProject.Repo.TourRepository;
 import com.example.SpringMongoProject.Repo.UserRepository;
@@ -12,6 +14,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
+import java.util.List;
+import java.util.Map; // THÊM IMPORT NÀY
+import java.util.function.Function; // THÊM IMPORT NÀY
+import java.util.stream.Collectors; // THÊM IMPORT NÀY
 
 @Service
 public class BookingService {
@@ -24,18 +30,43 @@ public class BookingService {
     private UserRepository userRepository;
     @Autowired
     private TourRepository tourRepository;
+    @Autowired
+    private DestinationRepository destinationRepository;
+
+    public List<Booking> findAllBookings() {
+        List<Booking> bookings = bookingRepository.findAll();
+        populateToursForBookings(bookings);
+        return bookings;
+    }
+
+    public List<Booking> findBookingsByUserId(String userId) {
+        List<Booking> bookings = bookingRepository.findByUserId(userId);
+        populateToursForBookings(bookings);
+        return bookings;
+    }
+
+    public Booking approveBooking(String bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
+        booking.setStatus("approved");
+        return bookingRepository.save(booking);
+    }
+
+    public Booking rejectBooking(String bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
+        booking.setStatus("rejected");
+        return bookingRepository.save(booking);
+    }
 
     public Booking createBooking(Booking bookingData) {
-        // Lấy thông tin user và tour từ ID để đảm bảo dữ liệu hợp lệ
         User user = userRepository.findById(bookingData.getUser().getId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
         Tour tour = tourRepository.findById(bookingData.getTour().getId())
                 .orElseThrow(() -> new RuntimeException("Tour not found"));
-
         bookingData.setUser(user);
         bookingData.setTour(tour);
-        bookingData.setStatus("pending"); // Luôn bắt đầu với trạng thái chờ
-
+        bookingData.setStatus("pending_approval");
         return bookingRepository.save(bookingData);
     }
 
@@ -43,15 +74,13 @@ public class BookingService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
-        // Mô phỏng quá trình thanh toán
-        boolean isPaymentSuccessful = true; // Giả định thanh toán luôn thành công
-
+        if (!"approved".equals(booking.getStatus())) {
+            throw new IllegalStateException("Booking này chưa được duyệt hoặc đã được xử lý.");
+        }
+        boolean isPaymentSuccessful = true;
         if (isPaymentSuccessful) {
-            // Cập nhật trạng thái booking
             booking.setStatus("confirmed");
             bookingRepository.save(booking);
-
-            // Tạo bản ghi thanh toán
             Payment payment = new Payment();
             payment.setUserId(booking.getUser().getId());
             payment.setAmount(amount);
@@ -61,12 +90,45 @@ public class BookingService {
             payment.setBookingId(booking.getId());
             payment.setBookingModel("Booking");
             paymentRepository.save(payment);
-
             return true;
         } else {
             booking.setStatus("cancelled");
             bookingRepository.save(booking);
             return false;
         }
+    }
+
+    private void populateToursForBookings(List<Booking> bookings) {
+        if (bookings == null || bookings.isEmpty()) return;
+
+        List<Tour> tours = bookings.stream().map(Booking::getTour).collect(Collectors.toList());
+        List<String> destIds = tours.stream()
+                .map(Tour::getDestinationId)
+                .filter(id -> id != null && !id.isEmpty())
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (destIds.isEmpty()) return;
+
+        List<Destination> destinations = destinationRepository.findAllById(destIds);
+
+        // SỬA LỖI TẠI ĐÂY: Sử dụng Function.identity() và thêm merge function để tránh lỗi
+        Map<String, Destination> destMap = destinations.stream()
+                .collect(Collectors.toMap(Destination::getId, Function.identity(), (existing, replacement) -> existing));
+
+        tours.forEach(tour -> {
+            if (tour.getDestinationId() != null) {
+                tour.setDestination(destMap.get(tour.getDestinationId()));
+            }
+        });
+    }
+    // Thêm phương thức này vào trong class BookingService
+
+    public Booking findBookingById(String bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
+        // Làm đầy dữ liệu tour và destination
+        populateToursForBookings(List.of(booking));
+        return booking;
     }
 }

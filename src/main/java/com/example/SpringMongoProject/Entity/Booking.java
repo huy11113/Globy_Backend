@@ -18,5 +18,8 @@ public class Booking {
     private Date startDate;
     private Integer people;
     private Double totalPrice;
-    private String status = "pending";
+    private String status = "pending_approval"; // Sửa lại trạng thái mặc định
+
+    // ✅ THÊM TRƯỜNG MỚI Ở ĐÂY
+    private String notes;
 }

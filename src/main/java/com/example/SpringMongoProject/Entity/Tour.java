@@ -3,7 +3,7 @@ package com.example.SpringMongoProject.Entity;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.Transient; // IMPORT MỚI
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -14,17 +14,12 @@ import java.util.List;
 @Document(collection = "tours")
 public class Tour {
 
-    // --- CÁC TRƯỜNG KHÁC GIỮ NGUYÊN ---
     @Id
     @JsonProperty("_id")
     private String id;
     private String title;
     private String city;
     private String description;
-    // --- HẾT PHẦN GIỮ NGUYÊN ---
-
-
-    // ===== THAY ĐỔI QUAN TRỌNG Ở ĐÂY =====
 
     // 1. Trường này sẽ chỉ chứa ID của destination, ánh xạ với trường 'destinationId' trong DB
     @Field("destinationId")
@@ -35,8 +30,6 @@ public class Tour {
     @Transient
     private Destination destination;
 
-
-    // --- CÁC TRƯỜNG KHÁC GIỮ NGUYÊN ---
     private Double price;
     private String duration;
     private String image;

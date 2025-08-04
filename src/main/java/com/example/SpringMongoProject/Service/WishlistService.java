@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -69,6 +70,7 @@ public class WishlistService {
     }
 
     // Hàm tiện ích để làm đầy thông tin destination
+    // Bên trong file WishlistService.java
     private void populateDestinationsForTours(List<Tour> tours) {
         if (tours == null || tours.isEmpty()) return;
 
@@ -82,7 +84,7 @@ public class WishlistService {
 
         List<Destination> destinations = destinationRepository.findAllById(destIds);
         Map<String, Destination> destMap = destinations.stream()
-                .collect(Collectors.toMap(Destination::getId, dest -> dest));
+                .collect(Collectors.toMap(Destination::getId, Function.identity(), (existing, replacement) -> existing));
 
         tours.forEach(tour -> {
             if (tour.getDestinationId() != null) {

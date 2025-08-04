@@ -4,7 +4,6 @@ import com.example.SpringMongoProject.Entity.Destination;
 import com.example.SpringMongoProject.Entity.Tour;
 import com.example.SpringMongoProject.Repo.DestinationRepository;
 import com.example.SpringMongoProject.Repo.TourRepository;
-import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -76,30 +76,25 @@ public class TourService {
 
     // Hàm tiện ích để làm đầy thông tin destination
     private void populateDestinationsForTours(List<Tour> tours) {
-        if (tours == null || tours.isEmpty()) {
-            return;
-        }
-        // 1. Thu thập tất cả các destinationId
+        if (tours == null || tours.isEmpty()) return;
+
         List<String> destIds = tours.stream()
                 .map(Tour::getDestinationId)
                 .filter(id -> id != null && !id.isEmpty())
                 .distinct()
                 .collect(Collectors.toList());
 
-        if (destIds.isEmpty()) {
-            return;
-        }
+        if (destIds.isEmpty()) return;
 
-        // 2. Lấy tất cả destination trong 1 lần query
         List<Destination> destinations = destinationRepository.findAllById(destIds);
         Map<String, Destination> destMap = destinations.stream()
-                .collect(Collectors.toMap(Destination::getId, dest -> dest));
+                .collect(Collectors.toMap(Destination::getId, Function.identity(), (existing, replacement) -> existing));
 
-        // 3. Gán object Destination đầy đủ vào trường "destination" của mỗi tour
         for (Tour tour : tours) {
             if (tour.getDestinationId() != null) {
                 tour.setDestination(destMap.get(tour.getDestinationId()));
             }
         }
     }
+
 }

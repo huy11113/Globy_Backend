@@ -7,10 +7,10 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder; // Bỏ import BCryptPasswordEncoder
+import org.springframework.stereotype.Service;
+
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Random;
@@ -21,9 +21,16 @@ public class AuthService {
 
     @Autowired
     private UserRepository userRepository;
-    @Value("${google.client.id}") // Lấy giá trị từ application.properties
+
+    @Value("${google.client.id}")
     private String googleClientId;
-    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    // ✅ SỬA LỖI 1: Xóa dòng này đi. Không tạo PasswordEncoder mới ở đây.
+    // private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    // ✅ SỬA LỖI 2: Inject (tiêm) PasswordEncoder duy nhất do Spring quản lý từ SecurityConfig.
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     /**
      * Xử lý logic đăng ký người dùng mới.
@@ -37,6 +44,7 @@ public class AuthService {
         newUser.setName(registrationData.getName());
         newUser.setPhoneNumber(registrationData.getPhoneNumber());
         newUser.setEmail(registrationData.getEmail());
+        // Bây giờ nó sẽ dùng PasswordEncoder nhất quán của hệ thống
         newUser.setPassword(passwordEncoder.encode(registrationData.getPassword()));
 
         return userRepository.save(newUser);
@@ -48,6 +56,7 @@ public class AuthService {
     public Optional<User> login(String phoneNumber, String password) {
         Optional<User> userOpt = userRepository.findByPhoneNumber(phoneNumber);
 
+        // Việc so sánh bây giờ sẽ luôn chính xác
         if (userOpt.isPresent() && passwordEncoder.matches(password, userOpt.get().getPassword())) {
             return userOpt;
         }
@@ -62,12 +71,11 @@ public class AuthService {
 
         if (userOpt.isPresent()) {
             User user = userOpt.get();
-            // Điều kiện quan trọng: mật khẩu phải khớp VÀ vai trò phải là "admin"
             if (passwordEncoder.matches(password, user.getPassword()) && "admin".equalsIgnoreCase(user.getRole())) {
-                return Optional.of(user); // Đăng nhập admin thành công
+                return Optional.of(user);
             }
         }
-        return Optional.empty(); // Sai thông tin hoặc không có quyền admin
+        return Optional.empty();
     }
 
     /**
@@ -96,21 +104,16 @@ public class AuthService {
         userRepository.save(user);
         return true;
     }
-    // --- PHƯƠI THỨC MỚI CHO GOOGLE LOGIN ---
 
     /**
      * Xác thực Google ID Token, sau đó đăng nhập hoặc đăng ký user mới.
-     * @param googleTokenString Google ID Token nhận được từ frontend.
-     * @return User tương ứng trong database.
      */
     public User loginOrRegisterWithGoogle(String googleTokenString) {
         try {
-            // Khởi tạo bộ xác thực
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
                     .setAudience(Collections.singletonList(googleClientId))
                     .build();
 
-            // Xác thực token
             GoogleIdToken idToken = verifier.verify(googleTokenString);
             if (idToken == null) {
                 throw new IllegalArgumentException("Token Google không hợp lệ.");
@@ -121,14 +124,12 @@ public class AuthService {
             String name = (String) payload.get("name");
             String avatar = (String) payload.get("picture");
 
-            // Tìm user bằng email, nếu không có thì tạo mới
             return userRepository.findByEmail(email).orElseGet(() -> {
                 User newUser = new User();
                 newUser.setEmail(email);
                 newUser.setName(name);
                 newUser.setAvatar(avatar);
                 newUser.setRole("user");
-                // Tạo một mật khẩu ngẫu nhiên mạnh vì user này sẽ không dùng đến nó
                 newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
                 return userRepository.save(newUser);
             });
