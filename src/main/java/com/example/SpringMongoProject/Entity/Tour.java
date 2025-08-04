@@ -6,7 +6,6 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
-
 import java.util.Date;
 import java.util.List;
 
@@ -21,12 +20,9 @@ public class Tour {
     private String city;
     private String description;
 
-    // 1. Trường này sẽ chỉ chứa ID của destination, ánh xạ với trường 'destinationId' trong DB
     @Field("destinationId")
     private String destinationId;
 
-    // 2. Trường này sẽ được làm đầy thủ công, không lưu vào DB
-    // Nó sẽ chứa toàn bộ object Destination để trả về cho Frontend
     @Transient
     private Destination destination;
 
@@ -36,6 +32,8 @@ public class Tour {
     private Double rating = 0.0;
     private Integer reviewsCount = 0;
     private Boolean featured;
+
+    // --- CÁC TRƯỜNG MỚI ĐƯỢC THÊM VÀO ---
     private List<String> images;
     private String startLocation;
     private String endLocation;
@@ -46,6 +44,7 @@ public class Tour {
     private List<Departure> departures;
     private List<ItineraryItem> itinerary;
 
+    // Lớp con để định nghĩa cấu trúc cho một mục trong lịch trình
     @Data
     public static class ItineraryItem {
         private Integer day;
@@ -53,6 +52,7 @@ public class Tour {
         private String details;
     }
 
+    // Lớp con để định nghĩa cấu trúc cho một ngày khởi hành
     @Data
     public static class Departure {
         private Date date;
