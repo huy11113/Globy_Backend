@@ -24,21 +24,13 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                // Bật CORS để cho phép frontend gọi tới
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                // Tắt CSRF vì chúng ta đang làm API
                 .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(authorize -> authorize
-                        // Các API công khai
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/tours/**").permitAll()
-                        .requestMatchers("/api/destinations/**").permitAll()
-
-                        // Các API cần đăng nhập (tạm thời cho phép để test)
-                        .requestMatchers("/api/wishlist/**").permitAll()
-                        .requestMatchers("/api/bookings/**").permitAll()
-                        .requestMatchers("/api/users/**").permitAll()
-                        .requestMatchers("/api/hotels/**").permitAll()
-                        // Các API khác yêu cầu xác thực (nếu có)
-                        .anyRequest().authenticated()
+                // PHẦN QUAN TRỌNG NHẤT: Cho phép TẤT CẢ các yêu cầu đi qua
+                .authorizeHttpRequests(auth -> auth
+                        .anyRequest().permitAll()
                 );
         return http.build();
     }
