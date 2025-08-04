@@ -30,6 +30,7 @@ public class TourService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
+    // --- CÁC PHƯƠNG THỨC LẤY DỮ LIỆU (KHÔNG THAY ĐỔI) ---
     public Page<Tour> findTours(String searchTerm, String sortBy, int page, int limit, Double maxPrice, Boolean featured, String destinationId) {
         Pageable pageable = PageRequest.of(page - 1, limit);
         Query query = new Query().with(pageable);
@@ -61,9 +62,7 @@ public class TourService {
         List<Tour> tours = mongoTemplate.find(query, Tour.class);
         long total = mongoTemplate.count(Query.of(query).limit(-1).skip(-1), Tour.class);
 
-        // Bước làm đầy dữ liệu thủ công
         populateDestinationsForTours(tours);
-
         return PageableExecutionUtils.getPage(tours, pageable, () -> total);
     }
 
@@ -74,22 +73,17 @@ public class TourService {
         return tour;
     }
 
-    // Hàm tiện ích để làm đầy thông tin destination
     private void populateDestinationsForTours(List<Tour> tours) {
         if (tours == null || tours.isEmpty()) return;
-
         List<String> destIds = tours.stream()
                 .map(Tour::getDestinationId)
                 .filter(id -> id != null && !id.isEmpty())
                 .distinct()
                 .collect(Collectors.toList());
-
         if (destIds.isEmpty()) return;
-
         List<Destination> destinations = destinationRepository.findAllById(destIds);
         Map<String, Destination> destMap = destinations.stream()
                 .collect(Collectors.toMap(Destination::getId, Function.identity(), (existing, replacement) -> existing));
-
         for (Tour tour : tours) {
             if (tour.getDestinationId() != null) {
                 tour.setDestination(destMap.get(tour.getDestinationId()));
@@ -97,4 +91,59 @@ public class TourService {
         }
     }
 
+    // --- CÁC PHƯƠNG THỨC MỚI CHO ADMIN (CRUD) ---
+
+    /**
+     * Tạo một tour mới.
+     * @param tourData Dữ liệu tour đầy đủ từ controller.
+     * @return Tour đã được lưu.
+     */
+    public Tour createTour(Tour tourData) {
+        destinationRepository.findById(tourData.getDestinationId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy Destination với ID: " + tourData.getDestinationId()));
+        return tourRepository.save(tourData);
+    }
+
+    /**
+     * Cập nhật thông tin một tour đã có.
+     * @param id ID của tour cần cập nhật.
+     * @param tourDetails Chi tiết mới của tour.
+     * @return Tour sau khi đã cập nhật.
+     */
+    public Tour updateTour(String id, Tour tourDetails) {
+        Tour tour = tourRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tour với ID: " + id));
+
+        // Cập nhật tất cả các trường từ dữ liệu nhận được
+        tour.setTitle(tourDetails.getTitle());
+        tour.setCity(tourDetails.getCity());
+        tour.setDescription(tourDetails.getDescription());
+        tour.setDestinationId(tourDetails.getDestinationId());
+        tour.setPrice(tourDetails.getPrice());
+        tour.setDuration(tourDetails.getDuration());
+        tour.setImage(tourDetails.getImage());
+        tour.setFeatured(tourDetails.getFeatured());
+        tour.setImages(tourDetails.getImages());
+        tour.setStartLocation(tourDetails.getStartLocation());
+        tour.setEndLocation(tourDetails.getEndLocation());
+        tour.setIncluded(tourDetails.getIncluded());
+        tour.setExcluded(tourDetails.getExcluded());
+        tour.setTags(tourDetails.getTags());
+        tour.setCategory(tourDetails.getCategory());
+        tour.setDepartures(tourDetails.getDepartures());
+        tour.setItinerary(tourDetails.getItinerary());
+
+        return tourRepository.save(tour);
+    }
+
+    /**
+     * Xóa một tour khỏi cơ sở dữ liệu.
+     * @param id ID của tour cần xóa.
+     */
+    public void deleteTour(String id) {
+        if (!tourRepository.existsById(id)) {
+            throw new RuntimeException("Không tìm thấy tour với ID: " + id);
+        }
+        tourRepository.deleteById(id);
+    }
 }
