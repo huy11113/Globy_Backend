@@ -8,7 +8,7 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.crypto.password.PasswordEncoder; // Bỏ import BCryptPasswordEncoder
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
@@ -25,10 +25,10 @@ public class AuthService {
     @Value("${google.client.id}")
     private String googleClientId;
 
-    // ✅ SỬA LỖI 1: Xóa dòng này đi. Không tạo PasswordEncoder mới ở đây.
+    // SỬA LỖI 1: Xóa dòng tạo PasswordEncoder cục bộ đi.
     // private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-    // ✅ SỬA LỖI 2: Inject (tiêm) PasswordEncoder duy nhất do Spring quản lý từ SecurityConfig.
+    // SỬA LỖI 2: Inject (tiêm) PasswordEncoder duy nhất do Spring quản lý từ SecurityConfig.
     @Autowired
     private PasswordEncoder passwordEncoder;
 
@@ -46,6 +46,7 @@ public class AuthService {
         newUser.setEmail(registrationData.getEmail());
         // Bây giờ nó sẽ dùng PasswordEncoder nhất quán của hệ thống
         newUser.setPassword(passwordEncoder.encode(registrationData.getPassword()));
+        newUser.setRole("user"); // Đảm bảo vai trò mặc định là user
 
         return userRepository.save(newUser);
     }
