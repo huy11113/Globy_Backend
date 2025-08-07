@@ -9,8 +9,9 @@ public class CreateBookingRequest {
     private String tourId;
     private Date startDate;
     private Integer people;
-    private Double totalPrice;
 
-    // ✅ THÊM TRƯỜDNG MỚI Ở ĐÂY
+    // ✅ THAY ĐỔI: Chuyển sang Long
+    private Long totalPrice;
+
     private String notes;
 }

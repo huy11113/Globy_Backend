@@ -41,7 +41,6 @@ public class BookingService {
 
     public List<Booking> findAllBookings() {
         List<Booking> bookings = bookingRepository.findAll();
-        // Sắp xếp an toàn, phòng trường hợp `createdAt` bị null ở các bản ghi cũ
         bookings.sort(Comparator.comparing(Booking::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         populateToursForBookings(bookings);
         return bookings;
@@ -49,7 +48,6 @@ public class BookingService {
 
     public List<Booking> findBookingsByUserId(String userId) {
         List<Booking> bookings = bookingRepository.findByUserId(userId);
-        // Sắp xếp an toàn
         bookings.sort(Comparator.comparing(Booking::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         populateToursForBookings(bookings);
         return bookings;
@@ -61,14 +59,12 @@ public class BookingService {
         booking.setStatus("approved");
         Booking savedBooking = bookingRepository.save(booking);
 
-        // --- TẠO THÔNG BÁO CHO USER ---
         Notification notification = new Notification();
         notification.setMessage("Yêu cầu đặt tour '" + savedBooking.getTour().getTitle() + "' của bạn đã được duyệt. Hãy tiến hành thanh toán.");
         notification.setBookingId(savedBooking.getId());
-        notification.setRecipientId(savedBooking.getUser().getId()); // Gửi đến ID của user
+        notification.setRecipientId(savedBooking.getUser().getId());
         notification.setCreatedAt(LocalDateTime.now());
         notificationRepository.save(notification);
-        // -----------------------------
 
         return savedBooking;
     }
@@ -86,10 +82,9 @@ public class BookingService {
         bookingData.setUser(user);
         bookingData.setTour(tour);
         bookingData.setStatus("pending_approval");
-        bookingData.setCreatedAt(LocalDateTime.now()); // Gán thời gian tạo
+        bookingData.setCreatedAt(LocalDateTime.now());
         Booking savedBooking = bookingRepository.save(bookingData);
 
-        // Tạo thông báo
         Notification notification = new Notification();
         notification.setMessage(user.getName() + " vừa gửi yêu cầu đặt tour " + tour.getTitle());
         notification.setBookingId(savedBooking.getId());
@@ -99,7 +94,8 @@ public class BookingService {
         return savedBooking;
     }
 
-    public boolean processPayment(String bookingId, double amount, String method) {
+    // ✅ THAY ĐỔI: Chuyển amount từ double sang long
+    public boolean processPayment(String bookingId, long amount, String method) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
@@ -111,7 +107,7 @@ public class BookingService {
 
         Payment payment = new Payment();
         payment.setUserId(booking.getUser().getId());
-        payment.setAmount(amount);
+        payment.setAmount(amount); // amount bây giờ là kiểu long
         payment.setMethod(method);
         payment.setStatus("paid");
         payment.setPaidAt(new Date());
@@ -121,30 +117,20 @@ public class BookingService {
         return true;
     }
 
-    // --- CÁC PHƯƠNG THỨC MỚI CHO PAYOS ---
-
     public void setPaymentOrderCode(String bookingId, long orderCode) {
         Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
         booking.setPaymentOrderCode(orderCode);
         bookingRepository.save(booking);
     }
 
-    /**
-     * PHƯƠNG THỨC MỚI: Xác nhận booking dựa trên orderCode từ webhook của PayOS.
-     * @param orderCode Mã đơn hàng duy nhất do chúng ta tạo ra.
-     * @return Booking đã được xác nhận.
-     */
     public Booking confirmBookingByOrderCode(long orderCode) {
-        // Tìm chính xác booking thông qua orderCode mà PayOS trả về
         Booking booking = bookingRepository.findByPaymentOrderCode(orderCode)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy booking với orderCode: " + orderCode));
 
-        // Kiểm tra để chắc chắn rằng chúng ta chỉ xác nhận các booking đã được duyệt
         if (!"approved".equals(booking.getStatus())) {
             throw new IllegalStateException("Chỉ có thể xác nhận thanh toán cho các booking có trạng thái 'approved'.");
         }
 
-        // Cập nhật trạng thái và lưu lại
         booking.setStatus("confirmed");
         return bookingRepository.save(booking);
     }
@@ -155,8 +141,6 @@ public class BookingService {
         populateToursForBookings(List.of(booking));
         return booking;
     }
-
-    // --- PHƯƠNG THỨC TIỆN ÍCH (HELPER) ---
 
     private void populateToursForBookings(List<Booking> bookings) {
         if (bookings == null || bookings.isEmpty()) return;
