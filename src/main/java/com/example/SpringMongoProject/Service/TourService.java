@@ -30,8 +30,11 @@ public class TourService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    // --- CÁC PHƯƠNG THỨC LẤY DỮ LIỆU (KHÔNG THAY ĐỔI) ---
-    public Page<Tour> findTours(String searchTerm, String sortBy, int page, int limit, Double maxPrice, Boolean featured, String destinationId) {
+    public Page<Tour> findTours(String searchTerm, String sortBy, int page, int limit,
+                                // Đã sửa thành Long để khớp với Controller
+                                Long maxPrice,
+                                Boolean featured, String destinationId) {
+
         Pageable pageable = PageRequest.of(page - 1, limit);
         Query query = new Query().with(pageable);
 
@@ -91,30 +94,16 @@ public class TourService {
         }
     }
 
-    // --- CÁC PHƯƠNG THỨC MỚI CHO ADMIN (CRUD) ---
-
-    /**
-     * Tạo một tour mới.
-     * @param tourData Dữ liệu tour đầy đủ từ controller.
-     * @return Tour đã được lưu.
-     */
     public Tour createTour(Tour tourData) {
         destinationRepository.findById(tourData.getDestinationId())
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy Destination với ID: " + tourData.getDestinationId()));
         return tourRepository.save(tourData);
     }
 
-    /**
-     * Cập nhật thông tin một tour đã có.
-     * @param id ID của tour cần cập nhật.
-     * @param tourDetails Chi tiết mới của tour.
-     * @return Tour sau khi đã cập nhật.
-     */
     public Tour updateTour(String id, Tour tourDetails) {
         Tour tour = tourRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tour với ID: " + id));
 
-        // Cập nhật tất cả các trường từ dữ liệu nhận được
         tour.setTitle(tourDetails.getTitle());
         tour.setCity(tourDetails.getCity());
         tour.setDescription(tourDetails.getDescription());
@@ -136,10 +125,6 @@ public class TourService {
         return tourRepository.save(tour);
     }
 
-    /**
-     * Xóa một tour khỏi cơ sở dữ liệu.
-     * @param id ID của tour cần xóa.
-     */
     public void deleteTour(String id) {
         if (!tourRepository.existsById(id)) {
             throw new RuntimeException("Không tìm thấy tour với ID: " + id);
