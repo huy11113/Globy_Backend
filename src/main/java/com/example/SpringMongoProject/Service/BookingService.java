@@ -94,29 +94,6 @@ public class BookingService {
         return savedBooking;
     }
 
-    // ✅ THAY ĐỔI: Chuyển amount từ double sang long
-    public boolean processPayment(String bookingId, long amount, String method) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Booking not found"));
-
-        if (!"approved".equals(booking.getStatus())) {
-            throw new IllegalStateException("Booking này chưa được duyệt hoặc đã được xử lý.");
-        }
-        booking.setStatus("confirmed");
-        bookingRepository.save(booking);
-
-        Payment payment = new Payment();
-        payment.setUserId(booking.getUser().getId());
-        payment.setAmount(amount); // amount bây giờ là kiểu long
-        payment.setMethod(method);
-        payment.setStatus("paid");
-        payment.setPaidAt(new Date());
-        payment.setBookingId(booking.getId());
-        payment.setBookingModel("Booking");
-        paymentRepository.save(payment);
-        return true;
-    }
-
     public void setPaymentOrderCode(String bookingId, long orderCode) {
         Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
         booking.setPaymentOrderCode(orderCode);
@@ -128,11 +105,23 @@ public class BookingService {
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy booking với orderCode: " + orderCode));
 
         if (!"approved".equals(booking.getStatus())) {
-            throw new IllegalStateException("Chỉ có thể xác nhận thanh toán cho các booking có trạng thái 'approved'.");
+            System.err.println("Attempted to confirm a booking that is not in 'approved' state. OrderCode: " + orderCode + ", Current Status: " + booking.getStatus());
+            return booking;
         }
 
         booking.setStatus("confirmed");
-        return bookingRepository.save(booking);
+        Booking savedBooking = bookingRepository.save(booking);
+
+        // ✅ BỔ SUNG: TẠO THÔNG BÁO CHO NGƯỜI DÙNG KHI THANH TOÁN THÀNH CÔNG
+        Notification notification = new Notification();
+        notification.setMessage("Thanh toán cho tour '" + savedBooking.getTour().getTitle() + "' đã thành công!");
+        notification.setBookingId(savedBooking.getId());
+        notification.setRecipientId(savedBooking.getUser().getId()); // Gửi đến ID của user
+        notification.setCreatedAt(LocalDateTime.now());
+        notificationRepository.save(notification);
+        // --------------------------------------------------------------------
+
+        return savedBooking;
     }
 
     public Booking findBookingById(String bookingId) {
@@ -164,5 +153,32 @@ public class BookingService {
                 tour.setDestination(destMap.get(tour.getDestinationId()));
             }
         });
+    }
+
+    /**
+     * @deprecated Phương thức này có thể là code cũ, luồng PayOS sử dụng confirmBookingByOrderCode.
+     * Đã sửa lại để dùng Long cho nhất quán.
+     */
+    @Deprecated
+    public boolean processPayment(String bookingId, Long amount, String method) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        if (!"approved".equals(booking.getStatus())) {
+            throw new IllegalStateException("Booking này chưa được duyệt hoặc đã được xử lý.");
+        }
+        booking.setStatus("confirmed");
+        bookingRepository.save(booking);
+
+        Payment payment = new Payment();
+        payment.setUserId(booking.getUser().getId());
+        payment.setAmount(amount);
+        payment.setMethod(method);
+        payment.setStatus("paid");
+        payment.setPaidAt(new Date());
+        payment.setBookingId(booking.getId());
+        payment.setBookingModel("Booking");
+        paymentRepository.save(payment);
+        return true;
     }
 }
