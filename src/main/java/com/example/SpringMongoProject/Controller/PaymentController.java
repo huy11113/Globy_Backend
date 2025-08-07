@@ -11,6 +11,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -29,7 +30,6 @@ public class PaymentController {
     @Autowired
     private BookingService bookingService;
 
-    // Các biến @Value cho PayOS credentials (giữ nguyên)
     @Value("${payos.client.id}")
     private String payosClientId;
     @Value("${payos.api.key}")
@@ -46,10 +46,14 @@ public class PaymentController {
             String bookingId = body.get("bookingId");
             Booking booking = bookingService.findBookingById(bookingId);
 
+            // ✅ THÊM BƯỚC KIỂM TRA QUAN TRỌNG: Đảm bảo booking có giá tiền
+            if (booking.getTotalPrice() == null) {
+                throw new IllegalStateException("Đơn hàng này không có thông tin tổng giá tiền. Vui lòng kiểm tra lại.");
+            }
+
             long orderCode = new Date().getTime();
 
-            // ✅ SỬA LỖI: Lấy số tiền thực tế từ booking
-            // PayOS yêu cầu amount là số nguyên (int)
+            // Lấy số tiền thực tế từ booking (PayOS yêu cầu amount là số nguyên)
             int amount = booking.getTotalPrice().intValue();
 
             String description = "Thanh toan don hang tour " + booking.getTour().getTitle();
@@ -90,7 +94,9 @@ public class PaymentController {
 
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.internalServerError().body(Map.of("success", false, "message", e.getMessage()));
+            // Trả về lỗi 400 (Bad Request) nếu có lỗi logic, hoặc 500 cho các lỗi khác
+            HttpStatus status = e instanceof IllegalStateException ? HttpStatus.BAD_REQUEST : HttpStatus.INTERNAL_SERVER_ERROR;
+            return ResponseEntity.status(status).body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
