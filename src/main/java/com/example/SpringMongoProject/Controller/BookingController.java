@@ -15,7 +15,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/bookings")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
 public class BookingController {
 
     @Autowired
@@ -23,14 +23,12 @@ public class BookingController {
 
     /**
      * API để người dùng gửi yêu cầu đặt tour.
-     * Trạng thái ban đầu của booking sẽ là 'pending_approval'.
      */
     @PostMapping
     public ResponseEntity<Map<String, Object>> createBooking(@RequestBody CreateBookingRequest request) {
         try {
             Booking newBookingData = new Booking();
 
-            // Tạo các đối tượng User và Tour tạm thời chỉ chứa ID để liên kết
             User user = new User();
             user.setId(request.getUserId());
             Tour tour = new Tour();
@@ -41,8 +39,6 @@ public class BookingController {
             newBookingData.setStartDate(request.getStartDate());
             newBookingData.setPeople(request.getPeople());
             newBookingData.setTotalPrice(request.getTotalPrice());
-
-            // ✅ ĐÃ CẬP NHẬT: Nhận và lưu ghi chú từ request
             newBookingData.setNotes(request.getNotes());
 
             Booking createdBooking = bookingService.createBooking(newBookingData);
@@ -61,8 +57,7 @@ public class BookingController {
     }
 
     /**
-     * API để người dùng lấy danh sách tất cả các chuyến đi đã đặt của họ.
-     * Sẽ được dùng cho trang "Chuyến đi của tôi".
+     * API để người dùng lấy danh sách các chuyến đi đã đặt của họ.
      */
     @GetMapping("/my-trips/{userId}")
     public ResponseEntity<Map<String, Object>> getMyTrips(@PathVariable String userId) {
@@ -78,8 +73,7 @@ public class BookingController {
     }
 
     /**
-     * API để xử lý thanh toán cho một booking đã được admin duyệt ('approved').
-     * Sau khi thành công, trạng thái sẽ chuyển thành 'confirmed'.
+     * API để xử lý thanh toán cho một booking đã được admin duyệt.
      */
     @PostMapping("/payment")
     public ResponseEntity<Map<String, Object>> handlePayment(@RequestBody PaymentRequest request) {
@@ -97,17 +91,14 @@ public class BookingController {
                 ));
             }
         } catch (IllegalStateException e) {
-            // Bắt lỗi khi thanh toán cho booking chưa được duyệt
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false, "message", "Đã xảy ra lỗi trong quá trình thanh toán."));
         }
     }
-    // Thêm endpoint này vào trong class BookingController
 
     /**
      * API để lấy thông tin chi tiết của một booking.
-     * Dùng cho trang thanh toán.
      */
     @GetMapping("/{bookingId}")
     public ResponseEntity<Map<String, Object>> getBookingDetails(@PathVariable String bookingId) {

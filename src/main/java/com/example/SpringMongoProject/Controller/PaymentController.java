@@ -29,6 +29,7 @@ public class PaymentController {
     @Autowired
     private BookingService bookingService;
 
+    // Các biến @Value cho PayOS credentials (giữ nguyên)
     @Value("${payos.client.id}")
     private String payosClientId;
     @Value("${payos.api.key}")
@@ -46,12 +47,15 @@ public class PaymentController {
             Booking booking = bookingService.findBookingById(bookingId);
 
             long orderCode = new Date().getTime();
-            int amount = 2000; // Cố định 2000 VNĐ để test
-            String description = "TT booking " + booking.getId().substring(0, 8);
+
+            // ✅ SỬA LỖI: Lấy số tiền thực tế từ booking
+            // PayOS yêu cầu amount là số nguyên (int)
+            int amount = booking.getTotalPrice().intValue();
+
+            String description = "Thanh toan don hang tour " + booking.getTour().getTitle();
             String returnUrl = "http://localhost:5173/my-trips";
             String cancelUrl = "http://localhost:5173/checkout/" + bookingId;
 
-            // Lưu orderCode vào booking để đối chiếu
             bookingService.setPaymentOrderCode(bookingId, orderCode);
 
             ObjectNode paymentDataNode = objectMapper.createObjectNode();
@@ -96,18 +100,11 @@ public class PaymentController {
         System.out.println(webhookData.toString());
 
         try {
-            // Lấy ra đối tượng data từ webhook
             JsonNode data = webhookData.get("data");
-
-            // Kiểm tra xem giao dịch có thành công không ("code": "00") và có tồn tại orderCode không
             if (data != null && "00".equals(data.get("code").asText()) && data.has("orderCode")) {
-
-                // Lấy orderCode từ webhook
                 long orderCode = data.get("orderCode").asLong();
                 System.out.println("Processing successful payment for orderCode: " + orderCode);
 
-                // ✅ GỌI PHƯƠNG THỨC SERVICE MỚI
-                // Dùng orderCode để tìm và xác nhận chính xác booking
                 bookingService.confirmBookingByOrderCode(orderCode);
 
                 System.out.println("====== WEBHOOK PROCESSED SUCCESSFULLY for orderCode: " + orderCode + " ======");
@@ -118,8 +115,6 @@ public class PaymentController {
         } catch (Exception e) {
             System.err.println("====== ERROR PROCESSING WEBHOOK ======");
             e.printStackTrace();
-            // Trả về status 200 OK để PayOS không gửi lại webhook,
-            // nhưng log lỗi ở backend để kiểm tra.
             return ResponseEntity.ok("Error processing webhook, but acknowledged.");
         }
     }
