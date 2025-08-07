@@ -9,8 +9,10 @@ import java.util.Optional;
 @Repository
 public interface BookingRepository extends MongoRepository<Booking, String> {
     List<Booking> findByUserId(String userId);
+
+    // ✅ Đảm bảo phương thức này tồn tại
     Optional<Booking> findByPaymentOrderCode(Long paymentOrderCode);
 
-    // --- THÊM PHƯƠNG THỨC NÀY ---
+    // Phương thức cũ, không cần thiết cho logic mới nữa
     Optional<Booking> findFirstByStatusOrderByCreatedAtDesc(String status);
 }

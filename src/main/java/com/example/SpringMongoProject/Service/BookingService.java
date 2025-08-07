@@ -55,8 +55,6 @@ public class BookingService {
         return bookings;
     }
 
-    // Sửa lại phương thức này trong BookingService.java
-
     public Booking approveBooking(String bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
@@ -101,7 +99,6 @@ public class BookingService {
         return savedBooking;
     }
 
-    // --- PHƯƠNG THỨC ĐÃ ĐƯỢC THÊM LẠI ĐỂ SỬA LỖI ---
     public boolean processPayment(String bookingId, double amount, String method) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
@@ -132,10 +129,22 @@ public class BookingService {
         bookingRepository.save(booking);
     }
 
-    public Booking confirmMostRecentApprovedBooking() {
-        Booking booking = bookingRepository.findFirstByStatusOrderByCreatedAtDesc("approved")
-                .orElseThrow(() -> new RuntimeException("No approved booking found to confirm."));
+    /**
+     * PHƯƠNG THỨC MỚI: Xác nhận booking dựa trên orderCode từ webhook của PayOS.
+     * @param orderCode Mã đơn hàng duy nhất do chúng ta tạo ra.
+     * @return Booking đã được xác nhận.
+     */
+    public Booking confirmBookingByOrderCode(long orderCode) {
+        // Tìm chính xác booking thông qua orderCode mà PayOS trả về
+        Booking booking = bookingRepository.findByPaymentOrderCode(orderCode)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy booking với orderCode: " + orderCode));
 
+        // Kiểm tra để chắc chắn rằng chúng ta chỉ xác nhận các booking đã được duyệt
+        if (!"approved".equals(booking.getStatus())) {
+            throw new IllegalStateException("Chỉ có thể xác nhận thanh toán cho các booking có trạng thái 'approved'.");
+        }
+
+        // Cập nhật trạng thái và lưu lại
         booking.setStatus("confirmed");
         return bookingRepository.save(booking);
     }
