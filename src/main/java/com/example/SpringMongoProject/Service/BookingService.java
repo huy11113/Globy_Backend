@@ -2,22 +2,26 @@ package com.example.SpringMongoProject.Service;
 
 import com.example.SpringMongoProject.Entity.Booking;
 import com.example.SpringMongoProject.Entity.Destination;
+import com.example.SpringMongoProject.Entity.Notification;
 import com.example.SpringMongoProject.Entity.Payment;
 import com.example.SpringMongoProject.Entity.Tour;
 import com.example.SpringMongoProject.Entity.User;
 import com.example.SpringMongoProject.Repo.BookingRepository;
 import com.example.SpringMongoProject.Repo.DestinationRepository;
+import com.example.SpringMongoProject.Repo.NotificationRepository;
 import com.example.SpringMongoProject.Repo.PaymentRepository;
 import com.example.SpringMongoProject.Repo.TourRepository;
 import com.example.SpringMongoProject.Repo.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
-import java.util.Map; // THÊM IMPORT NÀY
-import java.util.function.Function; // THÊM IMPORT NÀY
-import java.util.stream.Collectors; // THÊM IMPORT NÀY
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class BookingService {
@@ -32,24 +36,43 @@ public class BookingService {
     private TourRepository tourRepository;
     @Autowired
     private DestinationRepository destinationRepository;
+    @Autowired
+    private NotificationRepository notificationRepository;
 
     public List<Booking> findAllBookings() {
         List<Booking> bookings = bookingRepository.findAll();
+        // Sắp xếp an toàn, phòng trường hợp `createdAt` bị null ở các bản ghi cũ
+        bookings.sort(Comparator.comparing(Booking::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         populateToursForBookings(bookings);
         return bookings;
     }
 
     public List<Booking> findBookingsByUserId(String userId) {
         List<Booking> bookings = bookingRepository.findByUserId(userId);
+        // Sắp xếp an toàn
+        bookings.sort(Comparator.comparing(Booking::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         populateToursForBookings(bookings);
         return bookings;
     }
+
+    // Sửa lại phương thức này trong BookingService.java
 
     public Booking approveBooking(String bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
         booking.setStatus("approved");
-        return bookingRepository.save(booking);
+        Booking savedBooking = bookingRepository.save(booking);
+
+        // --- TẠO THÔNG BÁO CHO USER ---
+        Notification notification = new Notification();
+        notification.setMessage("Yêu cầu đặt tour '" + savedBooking.getTour().getTitle() + "' của bạn đã được duyệt. Hãy tiến hành thanh toán.");
+        notification.setBookingId(savedBooking.getId());
+        notification.setRecipientId(savedBooking.getUser().getId()); // Gửi đến ID của user
+        notification.setCreatedAt(LocalDateTime.now());
+        notificationRepository.save(notification);
+        // -----------------------------
+
+        return savedBooking;
     }
 
     public Booking rejectBooking(String bookingId) {
@@ -60,16 +83,25 @@ public class BookingService {
     }
 
     public Booking createBooking(Booking bookingData) {
-        User user = userRepository.findById(bookingData.getUser().getId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        Tour tour = tourRepository.findById(bookingData.getTour().getId())
-                .orElseThrow(() -> new RuntimeException("Tour not found"));
+        User user = userRepository.findById(bookingData.getUser().getId()).orElseThrow(() -> new RuntimeException("User not found"));
+        Tour tour = tourRepository.findById(bookingData.getTour().getId()).orElseThrow(() -> new RuntimeException("Tour not found"));
         bookingData.setUser(user);
         bookingData.setTour(tour);
         bookingData.setStatus("pending_approval");
-        return bookingRepository.save(bookingData);
+        bookingData.setCreatedAt(LocalDateTime.now()); // Gán thời gian tạo
+        Booking savedBooking = bookingRepository.save(bookingData);
+
+        // Tạo thông báo
+        Notification notification = new Notification();
+        notification.setMessage(user.getName() + " vừa gửi yêu cầu đặt tour " + tour.getTitle());
+        notification.setBookingId(savedBooking.getId());
+        notification.setRecipientId("admin");
+        notification.setCreatedAt(LocalDateTime.now());
+        notificationRepository.save(notification);
+        return savedBooking;
     }
 
+    // --- PHƯƠNG THỨC ĐÃ ĐƯỢC THÊM LẠI ĐỂ SỬA LỖI ---
     public boolean processPayment(String bookingId, double amount, String method) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
@@ -77,26 +109,45 @@ public class BookingService {
         if (!"approved".equals(booking.getStatus())) {
             throw new IllegalStateException("Booking này chưa được duyệt hoặc đã được xử lý.");
         }
-        boolean isPaymentSuccessful = true;
-        if (isPaymentSuccessful) {
-            booking.setStatus("confirmed");
-            bookingRepository.save(booking);
-            Payment payment = new Payment();
-            payment.setUserId(booking.getUser().getId());
-            payment.setAmount(amount);
-            payment.setMethod(method);
-            payment.setStatus("paid");
-            payment.setPaidAt(new Date());
-            payment.setBookingId(booking.getId());
-            payment.setBookingModel("Booking");
-            paymentRepository.save(payment);
-            return true;
-        } else {
-            booking.setStatus("cancelled");
-            bookingRepository.save(booking);
-            return false;
-        }
+        booking.setStatus("confirmed");
+        bookingRepository.save(booking);
+
+        Payment payment = new Payment();
+        payment.setUserId(booking.getUser().getId());
+        payment.setAmount(amount);
+        payment.setMethod(method);
+        payment.setStatus("paid");
+        payment.setPaidAt(new Date());
+        payment.setBookingId(booking.getId());
+        payment.setBookingModel("Booking");
+        paymentRepository.save(payment);
+        return true;
     }
+
+    // --- CÁC PHƯƠNG THỨC MỚI CHO PAYOS ---
+
+    public void setPaymentOrderCode(String bookingId, long orderCode) {
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
+        booking.setPaymentOrderCode(orderCode);
+        bookingRepository.save(booking);
+    }
+
+    public Booking confirmMostRecentApprovedBooking() {
+        Booking booking = bookingRepository.findFirstByStatusOrderByCreatedAtDesc("approved")
+                .orElseThrow(() -> new RuntimeException("No approved booking found to confirm."));
+
+        booking.setStatus("confirmed");
+        return bookingRepository.save(booking);
+    }
+
+    public Booking findBookingById(String bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
+        populateToursForBookings(List.of(booking));
+        return booking;
+    }
+
+    // --- PHƯƠNG THỨC TIỆN ÍCH (HELPER) ---
 
     private void populateToursForBookings(List<Booking> bookings) {
         if (bookings == null || bookings.isEmpty()) return;
@@ -112,7 +163,6 @@ public class BookingService {
 
         List<Destination> destinations = destinationRepository.findAllById(destIds);
 
-        // SỬA LỖI TẠI ĐÂY: Sử dụng Function.identity() và thêm merge function để tránh lỗi
         Map<String, Destination> destMap = destinations.stream()
                 .collect(Collectors.toMap(Destination::getId, Function.identity(), (existing, replacement) -> existing));
 
@@ -121,14 +171,5 @@ public class BookingService {
                 tour.setDestination(destMap.get(tour.getDestinationId()));
             }
         });
-    }
-    // Thêm phương thức này vào trong class BookingService
-
-    public Booking findBookingById(String bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
-        // Làm đầy dữ liệu tour và destination
-        populateToursForBookings(List.of(booking));
-        return booking;
     }
 }
