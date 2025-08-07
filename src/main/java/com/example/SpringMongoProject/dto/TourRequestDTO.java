@@ -10,12 +10,13 @@ public class TourRequestDTO {
     private String city;
     private String description;
     private String destinationId;
-    private Double price;
+
+    // ✅ THAY ĐỔI: Chuyển từ Double sang Long
+    private Long price;
+
     private String duration;
     private String image;
     private Boolean featured;
-
-    // --- CÁC TRƯỜNG MỚI ---
     private List<String> images;
     private String startLocation;
     private String endLocation;
@@ -23,6 +24,6 @@ public class TourRequestDTO {
     private List<String> excluded;
     private List<String> tags;
     private String category;
-    private List<Tour.Departure> departures; // Sử dụng lại lớp con từ Entity
-    private List<Tour.ItineraryItem> itinerary; // Sử dụng lại lớp con từ Entity
+    private List<Tour.Departure> departures;
+    private List<Tour.ItineraryItem> itinerary;
 }

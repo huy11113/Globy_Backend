@@ -30,4 +30,34 @@ public class UserService {
     public Optional<User> findUserById(String id) {
         return userRepository.findById(id);
     }
+
+    /**
+     * ✅ HÀM MỚI: Xóa một người dùng khỏi hệ thống.
+     * @param userId ID của người dùng cần xóa.
+     */
+    public void deleteUser(String userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new RuntimeException("Không tìm thấy người dùng với ID: " + userId);
+        }
+        userRepository.deleteById(userId);
+    }
+
+    /**
+     * ✅ HÀM MỚI: Cập nhật vai trò (role) của người dùng.
+     * @param userId ID của người dùng.
+     * @param newRole Vai trò mới ('admin' hoặc 'user').
+     * @return User sau khi đã được cập nhật.
+     */
+    public User updateUserRole(String userId, String newRole) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID: " + userId));
+
+        // Chỉ cho phép cập nhật thành 'admin' hoặc 'user' để bảo mật
+        if (!"admin".equals(newRole) && !"user".equals(newRole)) {
+            throw new IllegalArgumentException("Vai trò không hợp lệ: " + newRole);
+        }
+
+        user.setRole(newRole);
+        return userRepository.save(user);
+    }
 }

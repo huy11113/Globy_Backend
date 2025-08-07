@@ -96,17 +96,31 @@ public class PaymentController {
         System.out.println(webhookData.toString());
 
         try {
+            // Lấy ra đối tượng data từ webhook
             JsonNode data = webhookData.get("data");
-            if (data != null && "00".equals(data.get("code").asText())) {
-                System.out.println("Processing successful payment for the most recent approved booking...");
-                bookingService.confirmMostRecentApprovedBooking();
-                System.out.println("====== WEBHOOK PROCESSED SUCCESSFULLY ======");
+
+            // Kiểm tra xem giao dịch có thành công không ("code": "00") và có tồn tại orderCode không
+            if (data != null && "00".equals(data.get("code").asText()) && data.has("orderCode")) {
+
+                // Lấy orderCode từ webhook
+                long orderCode = data.get("orderCode").asLong();
+                System.out.println("Processing successful payment for orderCode: " + orderCode);
+
+                // ✅ GỌI PHƯƠNG THỨC SERVICE MỚI
+                // Dùng orderCode để tìm và xác nhận chính xác booking
+                bookingService.confirmBookingByOrderCode(orderCode);
+
+                System.out.println("====== WEBHOOK PROCESSED SUCCESSFULLY for orderCode: " + orderCode + " ======");
+            } else {
+                System.out.println("Webhook received but no action taken (not a successful payment or no orderCode).");
             }
             return ResponseEntity.ok("Webhook received");
         } catch (Exception e) {
             System.err.println("====== ERROR PROCESSING WEBHOOK ======");
             e.printStackTrace();
-            return ResponseEntity.badRequest().body("Error processing webhook");
+            // Trả về status 200 OK để PayOS không gửi lại webhook,
+            // nhưng log lỗi ở backend để kiểm tra.
+            return ResponseEntity.ok("Error processing webhook, but acknowledged.");
         }
     }
 

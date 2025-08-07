@@ -26,14 +26,15 @@ public class Tour {
     @Transient
     private Destination destination;
 
-    private Double price;
+    // ✅ THAY ĐỔI: Chuyển từ Double sang Long để lưu giá VNĐ
+    private Long price;
+
     private String duration;
     private String image;
     private Double rating = 0.0;
     private Integer reviewsCount = 0;
     private Boolean featured;
 
-    // --- CÁC TRƯỜNG MỚI ĐƯỢC THÊM VÀO ---
     private List<String> images;
     private String startLocation;
     private String endLocation;
@@ -44,7 +45,6 @@ public class Tour {
     private List<Departure> departures;
     private List<ItineraryItem> itinerary;
 
-    // Lớp con để định nghĩa cấu trúc cho một mục trong lịch trình
     @Data
     public static class ItineraryItem {
         private Integer day;
@@ -52,7 +52,6 @@ public class Tour {
         private String details;
     }
 
-    // Lớp con để định nghĩa cấu trúc cho một ngày khởi hành
     @Data
     public static class Departure {
         private Date date;
