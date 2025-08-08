@@ -94,15 +94,48 @@ public class BookingService {
         return savedBooking;
     }
 
+    // ✅ SỬA LỖI: Thay đổi kiểu dữ liệu của `amount` từ `double` thành `Long` để khớp với Controller
+    public boolean processPayment(String bookingId, Long amount, String method) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        if (!"approved".equals(booking.getStatus())) {
+            throw new IllegalStateException("Booking này chưa được duyệt hoặc đã được xử lý.");
+        }
+        booking.setStatus("confirmed");
+        bookingRepository.save(booking);
+
+        Payment payment = new Payment();
+        payment.setUserId(booking.getUser().getId());
+        payment.setAmount(amount);
+        payment.setMethod(method);
+        payment.setStatus("paid");
+        payment.setPaidAt(new Date());
+        payment.setBookingId(booking.getId());
+        payment.setBookingModel("Booking");
+        paymentRepository.save(payment);
+        return true;
+    }
+
     public void setPaymentOrderCode(String bookingId, long orderCode) {
         Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
         booking.setPaymentOrderCode(orderCode);
         bookingRepository.save(booking);
     }
+    // ✅ ĐÂY LÀ PHƯƠNG THỨC CÒN THIẾU
+    public Booking prepareBookingForPayment(String bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
+
+        long orderCode = new Date().getTime();
+        booking.setPaymentOrderCode(orderCode);
+
+        return bookingRepository.save(booking);
+    }
 
     public Booking confirmBookingByOrderCode(long orderCode) {
         Booking booking = bookingRepository.findByPaymentOrderCode(orderCode)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy booking với orderCode: " + orderCode));
+                .orElseThrow(() -> new RuntimeException("Webhook received, but no booking was found with orderCode: " + orderCode + ". This might be a test webhook from PayOS dashboard."));
 
         if (!"approved".equals(booking.getStatus())) {
             System.err.println("Attempted to confirm a booking that is not in 'approved' state. OrderCode: " + orderCode + ", Current Status: " + booking.getStatus());
@@ -112,14 +145,12 @@ public class BookingService {
         booking.setStatus("confirmed");
         Booking savedBooking = bookingRepository.save(booking);
 
-        // ✅ BỔ SUNG: TẠO THÔNG BÁO CHO NGƯỜI DÙNG KHI THANH TOÁN THÀNH CÔNG
         Notification notification = new Notification();
         notification.setMessage("Thanh toán cho tour '" + savedBooking.getTour().getTitle() + "' đã thành công!");
         notification.setBookingId(savedBooking.getId());
-        notification.setRecipientId(savedBooking.getUser().getId()); // Gửi đến ID của user
+        notification.setRecipientId(savedBooking.getUser().getId());
         notification.setCreatedAt(LocalDateTime.now());
         notificationRepository.save(notification);
-        // --------------------------------------------------------------------
 
         return savedBooking;
     }
@@ -153,32 +184,5 @@ public class BookingService {
                 tour.setDestination(destMap.get(tour.getDestinationId()));
             }
         });
-    }
-
-    /**
-     * @deprecated Phương thức này có thể là code cũ, luồng PayOS sử dụng confirmBookingByOrderCode.
-     * Đã sửa lại để dùng Long cho nhất quán.
-     */
-    @Deprecated
-    public boolean processPayment(String bookingId, Long amount, String method) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Booking not found"));
-
-        if (!"approved".equals(booking.getStatus())) {
-            throw new IllegalStateException("Booking này chưa được duyệt hoặc đã được xử lý.");
-        }
-        booking.setStatus("confirmed");
-        bookingRepository.save(booking);
-
-        Payment payment = new Payment();
-        payment.setUserId(booking.getUser().getId());
-        payment.setAmount(amount);
-        payment.setMethod(method);
-        payment.setStatus("paid");
-        payment.setPaidAt(new Date());
-        payment.setBookingId(booking.getId());
-        payment.setBookingModel("Booking");
-        paymentRepository.save(payment);
-        return true;
     }
 }

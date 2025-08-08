@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.util.List; // THÊM IMPORT NÀY
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -73,7 +73,25 @@ public class BookingController {
     }
 
     /**
-     * API để xử lý thanh toán cho một booking đã được admin duyệt.
+     * API để lấy thông tin chi tiết của một booking.
+     */
+    @GetMapping("/{bookingId}")
+    public ResponseEntity<Map<String, Object>> getBookingDetails(@PathVariable String bookingId) {
+        try {
+            Booking booking = bookingService.findBookingById(bookingId);
+            return ResponseEntity.ok(Map.of("success", true, "data", booking));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * API này dường như là code cũ và không được sử dụng trong luồng PayOS.
+     * Luồng thanh toán hiện tại được xử lý qua /api/payment/create-payment-link.
+     * Giữ lại để tương thích nếu có logic khác đang dùng.
      */
     @PostMapping("/payment")
     public ResponseEntity<Map<String, Object>> handlePayment(@RequestBody PaymentRequest request) {
@@ -94,22 +112,6 @@ public class BookingController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("success", false, "message", "Đã xảy ra lỗi trong quá trình thanh toán."));
-        }
-    }
-
-    /**
-     * API để lấy thông tin chi tiết của một booking.
-     */
-    @GetMapping("/{bookingId}")
-    public ResponseEntity<Map<String, Object>> getBookingDetails(@PathVariable String bookingId) {
-        try {
-            Booking booking = bookingService.findBookingById(bookingId);
-            return ResponseEntity.ok(Map.of("success", true, "data", booking));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "success", false,
-                    "message", e.getMessage()
-            ));
         }
     }
 }
