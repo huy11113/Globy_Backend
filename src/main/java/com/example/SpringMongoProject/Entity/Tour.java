@@ -1,13 +1,17 @@
 package com.example.SpringMongoProject.Entity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.example.SpringMongoProject.Service.GeminiService;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
+
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 @Data
 @Document(collection = "tours")
@@ -26,9 +30,7 @@ public class Tour {
     @Transient
     private Destination destination;
 
-    // ✅ THAY ĐỔI: Chuyển từ Double sang Long để lưu giá VNĐ
     private Long price;
-
     private String duration;
     private String image;
     private Double rating = 0.0;
@@ -44,6 +46,44 @@ public class Tour {
     private String category;
     private List<Departure> departures;
     private List<ItineraryItem> itinerary;
+
+    public boolean matches(String destination, String duration, Double budget, List<String> tags, String continent, List<Destination> destinationsList) {
+        boolean destinationMatch = true;
+        if (destination != null) {
+            Optional<Destination> matchingDest = destinationsList.stream()
+                    .filter(d -> d.getId().equals(this.destinationId))
+                    .findFirst();
+
+            boolean nameInTitle = GeminiService.normalizeString(this.title).contains(GeminiService.normalizeString(destination));
+            boolean nameInCountry = matchingDest.isPresent() &&
+                    GeminiService.normalizeString(matchingDest.get().getName()).contains(GeminiService.normalizeString(destination));
+            destinationMatch = nameInTitle || nameInCountry;
+        }
+
+        boolean durationMatch = true;
+        if (duration != null) {
+            String tourDurationNumber = this.duration.replaceAll("[^\\d.]", "");
+            durationMatch = tourDurationNumber.equals(duration);
+        }
+
+        boolean budgetMatch = budget == null || this.price <= budget;
+
+        boolean tagsMatch = tags.isEmpty() || tags.stream()
+                .anyMatch(inputTag -> this.tags.stream()
+                        .anyMatch(tourTag -> GeminiService.normalizeString(tourTag).contains(GeminiService.normalizeString(inputTag))));
+
+        boolean continentMatch = true;
+        if (continent != null) {
+            Optional<Destination> matchingDest = destinationsList.stream()
+                    .filter(d -> d.getId().equals(this.destinationId))
+                    .findFirst();
+
+            continentMatch = matchingDest.isPresent() &&
+                    GeminiService.normalizeString(matchingDest.get().getContinent()).contains(GeminiService.normalizeString(continent));
+        }
+
+        return destinationMatch && durationMatch && budgetMatch && tagsMatch && continentMatch;
+    }
 
     @Data
     public static class ItineraryItem {

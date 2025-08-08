@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -43,16 +44,20 @@ public class PaymentController {
     public ResponseEntity<Map<String, Object>> createPaymentLink(@RequestBody Map<String, String> body) {
         try {
             String bookingId = body.get("bookingId");
-            Booking booking = bookingService.findBookingById(bookingId);
+            Booking booking = bookingService.prepareBookingForPayment(bookingId);
 
-            long orderCode = new Date().getTime();
-            int amount = 2000; // Cố định 2000 VNĐ để test
-            String description = "TT booking " + booking.getId().substring(0, 8);
+            if (booking.getTotalPrice() == null) {
+                throw new IllegalStateException("Đơn hàng này không có thông tin tổng giá tiền. Vui lòng kiểm tra lại.");
+            }
+
+            long orderCode = booking.getPaymentOrderCode();
+
+            // ✅ THAY ĐỔI: Gán cứng giá trị thanh toán là 2000 VNĐ
+            int amount = 2000;
+
+            String description = "TT don hang " + orderCode;
             String returnUrl = "http://localhost:5173/my-trips";
             String cancelUrl = "http://localhost:5173/checkout/" + bookingId;
-
-            // Lưu orderCode vào booking để đối chiếu
-            bookingService.setPaymentOrderCode(bookingId, orderCode);
 
             ObjectNode paymentDataNode = objectMapper.createObjectNode();
             paymentDataNode.put("orderCode", orderCode);
@@ -86,7 +91,8 @@ public class PaymentController {
 
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.internalServerError().body(Map.of("success", false, "message", e.getMessage()));
+            HttpStatus status = e instanceof IllegalStateException ? HttpStatus.BAD_REQUEST : HttpStatus.INTERNAL_SERVER_ERROR;
+            return ResponseEntity.status(status).body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
@@ -96,18 +102,11 @@ public class PaymentController {
         System.out.println(webhookData.toString());
 
         try {
-            // Lấy ra đối tượng data từ webhook
             JsonNode data = webhookData.get("data");
-
-            // Kiểm tra xem giao dịch có thành công không ("code": "00") và có tồn tại orderCode không
             if (data != null && "00".equals(data.get("code").asText()) && data.has("orderCode")) {
-
-                // Lấy orderCode từ webhook
                 long orderCode = data.get("orderCode").asLong();
                 System.out.println("Processing successful payment for orderCode: " + orderCode);
 
-                // ✅ GỌI PHƯƠNG THỨC SERVICE MỚI
-                // Dùng orderCode để tìm và xác nhận chính xác booking
                 bookingService.confirmBookingByOrderCode(orderCode);
 
                 System.out.println("====== WEBHOOK PROCESSED SUCCESSFULLY for orderCode: " + orderCode + " ======");
@@ -118,8 +117,6 @@ public class PaymentController {
         } catch (Exception e) {
             System.err.println("====== ERROR PROCESSING WEBHOOK ======");
             e.printStackTrace();
-            // Trả về status 200 OK để PayOS không gửi lại webhook,
-            // nhưng log lỗi ở backend để kiểm tra.
             return ResponseEntity.ok("Error processing webhook, but acknowledged.");
         }
     }
