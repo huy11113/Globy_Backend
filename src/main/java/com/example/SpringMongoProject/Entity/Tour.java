@@ -10,8 +10,9 @@ import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Data
 @Document(collection = "tours")
@@ -47,42 +48,60 @@ public class Tour {
     private List<Departure> departures;
     private List<ItineraryItem> itinerary;
 
-    public boolean matches(String destination, String duration, Double budget, List<String> tags, String continent, List<Destination> destinationsList) {
+    // ✅ PHIÊN BẢN GỌN HƠN: Đã loại bỏ tham số `budget`
+    public boolean matches(String destination, String duration, List<String> tags, String continent, List<Destination> destinationsList) {
         boolean destinationMatch = true;
-        if (destination != null) {
+        if (destination != null && !destination.isEmpty()) {
+            final String normalizedDestination = GeminiService.normalizeString(destination);
             Optional<Destination> matchingDest = destinationsList.stream()
                     .filter(d -> d.getId().equals(this.destinationId))
                     .findFirst();
 
-            boolean nameInTitle = GeminiService.normalizeString(this.title).contains(GeminiService.normalizeString(destination));
+            boolean nameInTitle = GeminiService.normalizeString(this.title).contains(normalizedDestination);
             boolean nameInCountry = matchingDest.isPresent() &&
-                    GeminiService.normalizeString(matchingDest.get().getName()).contains(GeminiService.normalizeString(destination));
+                    GeminiService.normalizeString(matchingDest.get().getName()).contains(normalizedDestination);
             destinationMatch = nameInTitle || nameInCountry;
         }
 
         boolean durationMatch = true;
-        if (duration != null) {
+        if (duration != null && !duration.isEmpty()) {
             String tourDurationNumber = this.duration.replaceAll("[^\\d.]", "");
             durationMatch = tourDurationNumber.equals(duration);
         }
 
-        boolean budgetMatch = budget == null || this.price <= budget;
+        boolean tagsMatch = true;
+        if (tags != null && !tags.isEmpty()) {
+            Stream<String> searchCorpusStream = Stream.of(
+                    this.description != null ? this.description : "",
+                    this.title != null ? this.title : "",
+                    this.tags != null ? String.join(" ", this.tags) : "",
+                    this.included != null ? String.join(" ", this.included) : "",
+                    this.itinerary != null ? this.itinerary.stream().map(i -> i.getTitle() + " " + i.getDetails()).collect(Collectors.joining(" ")) : ""
+            );
 
-        boolean tagsMatch = tags.isEmpty() || tags.stream()
-                .anyMatch(inputTag -> this.tags.stream()
-                        .anyMatch(tourTag -> GeminiService.normalizeString(tourTag).contains(GeminiService.normalizeString(inputTag))));
+            List<String> normalizedCorpus = searchCorpusStream
+                    .map(GeminiService::normalizeString)
+                    .collect(Collectors.toList());
+
+            tagsMatch = tags.stream().anyMatch(inputTag -> {
+                String normalizedInputTag = GeminiService.normalizeString(inputTag);
+                return normalizedCorpus.stream().anyMatch(corpusText -> corpusText.contains(normalizedInputTag));
+            });
+        }
 
         boolean continentMatch = true;
-        if (continent != null) {
+        if (continent != null && !continent.isEmpty()) {
+            final String normalizedContinent = GeminiService.normalizeString(continent);
             Optional<Destination> matchingDest = destinationsList.stream()
                     .filter(d -> d.getId().equals(this.destinationId))
                     .findFirst();
 
             continentMatch = matchingDest.isPresent() &&
-                    GeminiService.normalizeString(matchingDest.get().getContinent()).contains(GeminiService.normalizeString(continent));
+                    GeminiService.normalizeString(matchingDest.get().getContinent()).contains(normalizedContinent);
         }
 
-        return destinationMatch && durationMatch && budgetMatch && tagsMatch && continentMatch;
+        // Logic so sánh budget đã được chuyển cho AI, nên ở đây chỉ cần trả về các điều kiện còn lại
+        return destinationMatch && durationMatch && tagsMatch && continentMatch;
     }
 
     @Data
