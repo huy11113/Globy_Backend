@@ -4,18 +4,14 @@ import com.example.SpringMongoProject.Entity.Tour;
 import com.example.SpringMongoProject.Entity.Destination;
 import com.example.SpringMongoProject.Repo.TourRepository;
 import com.example.SpringMongoProject.Repo.DestinationRepository;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.Client;
 import com.google.genai.errors.ClientException;
 import com.google.genai.types.GenerateContentResponse;
-import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
-import java.io.File;
 import java.io.IOException;
 import java.text.Normalizer;
 import java.util.List;
@@ -58,22 +54,41 @@ public class GeminiService {
 
     public Map<String, Object> askGemini(String prompt) {
         try {
+            // 1. ✅ Xây dựng "Kiến thức" đầy đủ hơn, bao gồm cả GIÁ TIỀN
+            StringBuilder tourKnowledgeBase = new StringBuilder();
+            for (Tour tour : this.tours) {
+                tourKnowledgeBase.append(String.format("id: \"%s\", title: \"%s\", price: %d, description: \"%s\", tags: \"%s\"\n",
+                        tour.getId(),
+                        tour.getTitle(),
+                        tour.getPrice(), // Cung cấp giá cho AI
+                        tour.getDescription(),
+                        tour.getTags() != null ? String.join(", ", tour.getTags()) : ""
+                ));
+            }
+
+            // 2. ✅ Cập nhật Prompt để AI tự xử lý logic về GIÁ
             String geminiPrompt = String.format(
-                    "Bạn là một trợ lý chatbot du lịch. Hãy phân tích câu hỏi của người dùng và trích xuất các thông tin sau thành một đối tượng JSON.\n" +
-                            "- intent (ý định): Ví dụ: \"find_tour\", \"find_destination\" (tìm điểm đến), \"greeting\".\n" +
-                            "- entities (thực thể): Một đối tượng chứa các thông tin cụ thể.\n" +
-                            "    - destination (điểm đến): Tên địa điểm du lịch (ví dụ: \"Sapa\", \"Hạ Long\", \"Vietnam\").\n" +
-                            "    - duration (thời lượng): Thời gian du lịch (ví dụ: \"4\"). Chỉ trả về số.\n" +
-                            "    - tags (thẻ): Các từ khóa mô tả tour (ví dụ: \"trekking\", \"adventure\", \"beach\"). Hãy trả về bằng tiếng Anh để khớp với dữ liệu gốc.\n" +
-                            "    - budget (ngân sách): Mức giá tối đa. Chỉ trả về số.\n" +
-                            "    - continent (châu lục): Tên châu lục (ví dụ: \"Europe\", \"Asia\").\n\n" +
-                            "Nếu không tìm thấy thông tin nào, hãy để giá trị null. Chỉ trả về đối tượng JSON, không thêm bất kỳ văn bản nào khác. Câu trả lời của bạn nên được bao bọc trong một cặp dấu ngoặc nhọn {}.\n\n" +
-                            "Câu hỏi của người dùng:\n\"%s\"",
+                    "Bạn là một trợ lý tìm kiếm tour thông minh. Dựa vào danh sách tour CÓ SẴN dưới đây và câu hỏi của người dùng, hãy tìm ra các tour phù hợp nhất.\n\n" +
+                            "### Nhiệm vụ:\n" +
+                            "1. Đọc kỹ câu hỏi của người dùng để hiểu họ muốn tìm tour gì.\n" +
+                            "2. **Xử lý yêu cầu về giá:** Nếu người dùng đề cập đến một mức giá hoặc ngân sách (ví dụ: '18 triệu', 'dưới 20 triệu', 'khoảng 15 triệu'), hãy so sánh nó với trường `price` của mỗi tour. Hãy tìm những tour có giá nhỏ hơn hoặc bằng ngân sách đó.\n" +
+                            "3. Dựa vào TẤT CẢ tiêu chí (địa điểm, giá, hoạt động...), quét qua 'DANH SÁCH TOUR CÓ SẴN' và tìm tất cả các tour khớp với yêu cầu.\n" +
+                            "4. Trả lời bằng một đối tượng JSON DUY NHẤT có cấu trúc sau:\n" +
+                            "   { \"found_tour_ids\": [\"id_tour_1\", \"id_tour_2\", ...] }\n" +
+                            "   - `found_tour_ids` là một mảng (array) chứa ID của TẤT CẢ các tour bạn tìm thấy.\n" +
+                            "   - Nếu không tìm thấy tour nào, trả về mảng rỗng: { \"found_tour_ids\": [] }.\n" +
+                            "   - KHÔNG thêm bất kỳ giải thích hay văn bản nào khác ngoài đối tượng JSON này.\n\n" +
+                            "### DANH SÁCH TOUR CÓ SẴN (Đơn vị giá là VNĐ):\n" +
+                            "%s\n\n" +
+                            "### Câu hỏi của người dùng:\n" +
+                            "\"%s\"",
+                    tourKnowledgeBase.toString(),
                     prompt
             );
 
+            // 3. Gửi yêu cầu đến Gemini
             GenerateContentResponse response = client.models.generateContent(
-                    "gemini-2.5-flash",
+                    "gemini-1.5-flash-latest",
                     geminiPrompt,
                     null
             );
@@ -81,133 +96,77 @@ public class GeminiService {
             String geminiResponseRaw = response.text().trim();
             System.out.println("Phản hồi từ Gemini (thô): " + geminiResponseRaw);
 
-            String geminiResponseJson = "";
-            int startIndex = geminiResponseRaw.indexOf('{');
-            int endIndex = geminiResponseRaw.lastIndexOf('}');
-
-            if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-                geminiResponseJson = geminiResponseRaw.substring(startIndex, endIndex + 1);
-            } else {
-                return Map.of("success", false, "message", "Xin lỗi, Gemini không thể tạo phản hồi JSON hợp lệ cho yêu cầu này. Phản hồi thô: " + geminiResponseRaw);
+            // 4. Xử lý phản hồi JSON từ Gemini
+            String geminiResponseJson = extractJson(geminiResponseRaw);
+            if (geminiResponseJson.isEmpty()) {
+                return Map.of("success", true, "response", "Xin lỗi, tôi chưa hiểu ý bạn. Bạn có thể diễn đạt khác được không?");
             }
 
             ObjectMapper objectMapper = new ObjectMapper();
             JsonNode rootNode = objectMapper.readTree(geminiResponseJson);
 
-            String intent = rootNode.path("intent").asText();
-
-            if ("find_tour".equals(intent)) {
-                JsonNode entities = rootNode.path("entities");
-                String destination = entities.path("destination").asText(null);
-                String duration = entities.path("duration").asText(null);
-                String continent = entities.path("continent").asText(null);
-
-                List<String> tags = new ArrayList<>();
-                if (entities.has("tags") && entities.path("tags").isArray()) {
-                    for (JsonNode tagNode : entities.path("tags")) {
-                        tags.add(tagNode.asText());
-                    }
+            List<String> foundTourIds = new ArrayList<>();
+            if (rootNode.has("found_tour_ids") && rootNode.get("found_tour_ids").isArray()) {
+                for (JsonNode idNode : rootNode.get("found_tour_ids")) {
+                    foundTourIds.add(idNode.asText());
                 }
-
-                Double budget = null;
-                if (entities.has("budget") && (entities.path("budget").isTextual() || entities.path("budget").isNumber())) {
-                    try {
-                        budget = entities.path("budget").asDouble();
-                    } catch (Exception e) { }
-                }
-
-                final String finalDestination = destination;
-                final String finalDuration = duration;
-                final Double finalBudget = budget;
-                final String finalContinent = continent;
-
-                List<Tour> filteredTours = tourRepository.findAll().stream()
-                        .filter(tour -> tour.matches(finalDestination, finalDuration, finalBudget, tags, finalContinent, destinationRepository.findAll()))
-                        .collect(Collectors.toList());
-
-                if (filteredTours.size() == 1) {
-                    return formatBasicTourInfo(filteredTours.get(0));
-                } else if (filteredTours.size() > 1) {
-                    return formatSimpleTourList(filteredTours);
-                } else {
-                    return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với yêu cầu của bạn.");
-                }
-            } else if ("find_destination".equals(intent)) {
-                String destinationName = rootNode.path("entities").path("destination").asText(null);
-                String continentName = rootNode.path("entities").path("continent").asText(null);
-
-                if (destinationName != null) {
-                    return findDestinationInfoByName(destinationName);
-                } else if (continentName != null) {
-                    return findDestinationInfoByContinent(continentName);
-                }
-                return Map.of("success", true, "response", "Bạn muốn tìm hiểu về điểm đến nào?");
-            } else if ("greeting".equals(intent)) {
-                return Map.of("success", true, "response", "Chào bạn! Tôi có thể giúp gì cho bạn? Bạn muốn tìm tour nào?");
             }
 
-            return Map.of("success", true, "response", "Xin lỗi, tôi không hiểu yêu cầu của bạn. Bạn có thể thử tìm kiếm tour hoặc hỏi về một điểm đến.");
+            // 5. Lấy thông tin tour từ cache và định dạng phản hồi
+            List<Tour> filteredTours = this.tours.stream()
+                    .filter(tour -> foundTourIds.contains(tour.getId()))
+                    .collect(Collectors.toList());
 
-        } catch (ClientException e) {
+            if (filteredTours.size() == 1) {
+                return formatBasicTourInfo(filteredTours.get(0));
+            } else if (filteredTours.size() > 1) {
+                return formatSimpleTourList(filteredTours);
+            } else {
+                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với yêu cầu của bạn.");
+            }
+
+        } catch (ClientException | IOException e) {
             e.printStackTrace();
-            return Map.of("success", false, "message", "Đã xảy ra lỗi API với Gemini: " + e.getMessage());
-        } catch (IOException e) {
-            e.printStackTrace();
-            return Map.of("success", false, "message", "Đã xảy ra lỗi khi xử lý yêu cầu của bạn.");
+            return Map.of("success", false, "message", "Đã xảy ra lỗi khi xử lý yêu cầu của bạn: " + e.getMessage());
         }
     }
 
-    private Map<String, Object> findDestinationInfoByName(String name) {
-        for (Destination dest : destinations) {
-            if (normalizeString(dest.getName()).contains(normalizeString(name))) {
-                return Map.of("success", true, "response", formatDestinationInfo(dest));
-            }
+    private String extractJson(String rawResponse) {
+        int startIndex = rawResponse.indexOf('{');
+        int endIndex = rawResponse.lastIndexOf('}');
+        if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+            return rawResponse.substring(startIndex, endIndex + 1);
         }
-        return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy thông tin chi tiết về điểm đến này.");
-    }
-    private Map<String, Object> findDestinationInfoByContinent(String continent) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Các điểm đến ở ");
-        sb.append(continent);
-        sb.append(":\n");
-        boolean found = false;
-        for (Destination dest : destinations) {
-            if (normalizeString(dest.getContinent()).contains(normalizeString(continent))) {
-                sb.append(String.format("- %s\n", dest.getName()));
-                found = true;
-            }
-        }
-        if (found) {
-            return Map.of("success", true, "response", sb.toString());
-        }
-        return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy thông tin chi tiết về điểm đến này.");
+        return "";
     }
 
-    private String formatDestinationInfo(Destination dest) {
-        return String.format("Thông tin về %s:\n%s\nChâu lục: %s",
-                dest.getName(), dest.getDescription(), dest.getContinent());
-    }
-
+    // Các hàm format giữ nguyên
     private Map<String, Object> formatBasicTourInfo(Tour tour) {
         Map<String, Object> tourData = new HashMap<>();
-        tourData.put("text", String.format("Tìm thấy tour: %s. Giá: $%d. Thời lượng: %s. Mô tả: %s.",
-                tour.getTitle(), tour.getPrice(), tour.getDuration(), tour.getDescription()));
+        String formattedPrice = String.format("%,d", tour.getPrice()).replace(',', '.');
+        tourData.put("text", String.format("Tôi đã tìm thấy một tour rất phù hợp với bạn:\n**%s**", tour.getTitle()));
         tourData.put("image", tour.getImage());
         tourData.put("link", "/tours/" + tour.getId());
         return Map.of("success", true, "response", tourData);
     }
 
     private Map<String, Object> formatSimpleTourList(List<Tour> tours) {
-        if (tours.isEmpty()) {
-            return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với yêu cầu của bạn.");
+        List<Map<String, String>> tourListForResponse = new ArrayList<>();
+        for (Tour tour : tours) {
+            Map<String, String> tourInfo = new HashMap<>();
+            String formattedPrice = String.format("%,d", tour.getPrice()).replace(',', '.');
+
+            tourInfo.put("title", tour.getTitle());
+            tourInfo.put("details", String.format("Giá: %s VNĐ - %s", formattedPrice, tour.getDuration()));
+            tourInfo.put("link", "/tours/" + tour.getId());
+            tourInfo.put("image", tour.getImage());
+            tourListForResponse.add(tourInfo);
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Đây là danh sách các tour phù hợp:\n");
-        for (Tour tour : tours) {
-            sb.append(String.format("- %s (Giá: $%d, Thời lượng: %s)\n",
-                    tour.getTitle(), tour.getPrice(), tour.getDuration()));
-        }
-        return Map.of("success", true, "response", sb.toString());
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("text", "Tuyệt vời! Tôi đã tìm thấy một vài tour phù hợp với yêu cầu của bạn:");
+        responseData.put("tours", tourListForResponse);
+
+        return Map.of("success", true, "response", responseData);
     }
 }
