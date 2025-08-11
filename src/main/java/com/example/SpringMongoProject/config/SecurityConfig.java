@@ -38,6 +38,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
+        configuration.addAllowedOriginPattern("https://*.vercel.app");
         configuration.setAllowedOrigins(List.of("http://localhost:5173", "https://globy-demo-git-main-huys-projects-1ce2676a.vercel.app"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
