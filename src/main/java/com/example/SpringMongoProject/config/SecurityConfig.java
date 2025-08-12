@@ -38,8 +38,16 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.addAllowedOriginPattern("https://*.vercel.app");
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "https://globy-demo-git-main-huys-projects-1ce2676a.vercel.app"));
+
+        // SỬA Ở ĐÂY: Thêm tên miền mới của bạn
+        List<String> allowedOrigins = List.of(
+                "http://localhost:5173",
+                "https://globy-demo.vercel.app", // Giữ lại tên miền chính của Vercel
+                "https://www.globy-travel.website", // Thêm tên miền có www
+                "https://globy-travel.website" // Thêm tên miền không có www
+        );
+        configuration.setAllowedOrigins(allowedOrigins);
+
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
