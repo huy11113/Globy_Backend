@@ -18,7 +18,7 @@ public class Review {
     private Tour tour;
     private Integer rating;
     private String comment;
-
+    private boolean isVisible = true;
     // --- THÊM TRƯỜNG MỚI ĐỂ LƯU DẤU THỜI GIAN ---
     @CreatedDate
     private LocalDateTime createdAt;

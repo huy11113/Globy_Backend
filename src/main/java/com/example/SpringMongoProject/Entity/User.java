@@ -25,6 +25,7 @@ public class User {
     private String role = "user";
     private String avatar;
     private String resetCode;
+    private boolean suspended = false;
 
     @DBRef(lazy = true)
     private List<Tour> wishlist = new ArrayList<>();

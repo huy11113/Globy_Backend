@@ -25,16 +25,9 @@ public class AuthService {
     @Value("${google.client.id}")
     private String googleClientId;
 
-    // SỬA LỖI 1: Xóa dòng tạo PasswordEncoder cục bộ đi.
-    // private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-
-    // SỬA LỖI 2: Inject (tiêm) PasswordEncoder duy nhất do Spring quản lý từ SecurityConfig.
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    /**
-     * Xử lý logic đăng ký người dùng mới.
-     */
     public User register(User registrationData) {
         userRepository.findByPhoneNumber(registrationData.getPhoneNumber()).ifPresent(u -> {
             throw new IllegalStateException("Số điện thoại đã tồn tại.");
@@ -44,22 +37,25 @@ public class AuthService {
         newUser.setName(registrationData.getName());
         newUser.setPhoneNumber(registrationData.getPhoneNumber());
         newUser.setEmail(registrationData.getEmail());
-        // Bây giờ nó sẽ dùng PasswordEncoder nhất quán của hệ thống
         newUser.setPassword(passwordEncoder.encode(registrationData.getPassword()));
-        newUser.setRole("user"); // Đảm bảo vai trò mặc định là user
+        newUser.setRole("user");
 
         return userRepository.save(newUser);
     }
 
     /**
      * Xử lý logic đăng nhập cho người dùng thường.
+     * (GIỮ LẠI PHIÊN BẢN NÀY)
      */
     public Optional<User> login(String phoneNumber, String password) {
         Optional<User> userOpt = userRepository.findByPhoneNumber(phoneNumber);
 
-        // Việc so sánh bây giờ sẽ luôn chính xác
-        if (userOpt.isPresent() && passwordEncoder.matches(password, userOpt.get().getPassword())) {
-            return userOpt;
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            // Điều kiện kiểm tra người dùng có bị khóa hay không
+            if (passwordEncoder.matches(password, user.getPassword()) && !user.isSuspended()) {
+                return Optional.of(user);
+            }
         }
         return Optional.empty();
     }
@@ -79,9 +75,7 @@ public class AuthService {
         return Optional.empty();
     }
 
-    /**
-     * Gửi yêu cầu đặt lại mật khẩu.
-     */
+    // ... các hàm còn lại không đổi
     public void requestPasswordReset(String phoneNumber) {
         User user = userRepository.findByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new RuntimeException("Số điện thoại không tồn tại."));
@@ -93,9 +87,6 @@ public class AuthService {
         System.out.println("Mã xác nhận cho " + phoneNumber + " là: " + resetCode);
     }
 
-    /**
-     * Hoàn tất việc đặt lại mật khẩu mới.
-     */
     public boolean resetPassword(String phoneNumber, String resetCode, String newPassword) {
         User user = userRepository.findByPhoneNumberAndResetCode(phoneNumber, resetCode)
                 .orElseThrow(() -> new RuntimeException("Số điện thoại hoặc mã xác nhận không đúng."));
@@ -106,9 +97,6 @@ public class AuthService {
         return true;
     }
 
-    /**
-     * Xác thực Google ID Token, sau đó đăng nhập hoặc đăng ký user mới.
-     */
     public User loginOrRegisterWithGoogle(String googleTokenString) {
         try {
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
