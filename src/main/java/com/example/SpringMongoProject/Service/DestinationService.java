@@ -39,4 +39,34 @@ public class DestinationService {
         return destinationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy địa điểm với ID: " + id));
     }
+
+    /**
+     * ✅ HÀM MỚI: Tạo một địa điểm mới.
+     * (Đây là hàm còn thiếu gây ra lỗi "cannot find symbol")
+     */
+    public Destination createDestination(Destination destinationData) {
+        return destinationRepository.save(destinationData);
+    }
+
+    /**
+     * ✅ HÀM MỚI: Cập nhật thông tin một địa điểm.
+     */
+    public Destination updateDestination(String id, Destination destinationDetails) {
+        Destination destination = findDestinationById(id); // Tái sử dụng hàm có sẵn để kiểm tra tồn tại
+        destination.setName(destinationDetails.getName());
+        destination.setDescription(destinationDetails.getDescription());
+        destination.setImage(destinationDetails.getImage());
+        destination.setContinent(destinationDetails.getContinent());
+        return destinationRepository.save(destination);
+    }
+
+    /**
+     * ✅ HÀM MỚI: Xóa một địa điểm.
+     */
+    public void deleteDestination(String id) {
+        if (!destinationRepository.existsById(id)) {
+            throw new RuntimeException("Không tìm thấy địa điểm với ID: " + id);
+        }
+        destinationRepository.deleteById(id);
+    }
 }

@@ -1,3 +1,4 @@
+// PATH: src/main/java/com/example/SpringMongoProject/config/GeminiConfig.java
 package com.example.SpringMongoProject.config;
 
 import com.google.genai.Client;

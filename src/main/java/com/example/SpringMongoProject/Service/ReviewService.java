@@ -9,7 +9,7 @@ import com.example.SpringMongoProject.Repo.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -41,8 +41,8 @@ public class ReviewService {
 
         reviewData.setUser(user);
         reviewData.setTour(tour);
+        reviewData.setCreatedAt(LocalDateTime.now()); // ✅ Gán thời gian tạo
         Review savedReview = reviewRepository.save(reviewData);
-
         // --- Logic cập nhật rating trung bình ---
         List<Review> reviews = reviewRepository.findByTourId(tour.getId());
         double totalRating = reviews.stream().mapToInt(Review::getRating).sum();
@@ -52,5 +52,55 @@ public class ReviewService {
         // -----------------------------------------
 
         return savedReview;
+    }
+    /**
+     * ✅ HÀM MỚI: Lấy tất cả review cho admin
+     */
+    public List<Review> findAllReviews() {
+        return reviewRepository.findAll();
+    }
+
+    /**
+     * Lấy tất cả review CÓ THỂ HIỂN THỊ của một tour (cho người dùng xem)
+     */
+    public List<Review> findVisibleReviewsByTourId(String tourId) {
+        return reviewRepository.findByTourIdAndIsVisibleTrue(tourId); // Sửa lại hàm
+    }
+    /**
+     * ✅ HÀM MỚI: Cập nhật trạng thái hiển thị của review
+     */
+    @Transactional
+    public Review updateReviewVisibility(String reviewId, boolean isVisible) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy review với ID: " + reviewId));
+        review.setVisible(isVisible);
+        return reviewRepository.save(review);
+    }
+
+    /**
+     * ✅ HÀM MỚI: Xóa một review và cập nhật lại rating
+     */
+    @Transactional
+    public void deleteReview(String reviewId) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy review với ID: " + reviewId));
+
+        String tourId = review.getTour().getId();
+        reviewRepository.delete(review);
+
+        // Cập nhật lại rating của tour sau khi xóa
+        List<Review> remainingReviews = reviewRepository.findByTourId(tourId);
+        Tour tour = tourRepository.findById(tourId).orElse(null);
+        if (tour != null) {
+            if (remainingReviews.isEmpty()) {
+                tour.setRating(0.0);
+                tour.setReviewsCount(0);
+            } else {
+                double totalRating = remainingReviews.stream().mapToInt(Review::getRating).sum();
+                tour.setRating(totalRating / remainingReviews.size());
+                tour.setReviewsCount(remainingReviews.size());
+            }
+            tourRepository.save(tour);
+        }
     }
 }

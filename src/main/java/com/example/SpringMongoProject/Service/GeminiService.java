@@ -1,84 +1,67 @@
 package com.example.SpringMongoProject.Service;
 
 import com.example.SpringMongoProject.Entity.Tour;
-import com.example.SpringMongoProject.Entity.Destination;
-import com.example.SpringMongoProject.Repo.TourRepository;
-import com.example.SpringMongoProject.Repo.DestinationRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.Client;
 import com.google.genai.errors.ClientException;
 import com.google.genai.types.GenerateContentResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.PostConstruct;
 import java.io.IOException;
-import java.text.Normalizer;
-import java.util.List;
 import java.util.ArrayList;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.util.Optional;
-import java.util.Map;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class GeminiService {
-    private final com.google.genai.Client client;
-    private final TourRepository tourRepository;
-    private final DestinationRepository destinationRepository;
 
-    private List<Tour> tours;
-    private List<Destination> destinations;
+    @Autowired
+    private Client client; // Inject client Gemini
 
-    public GeminiService(com.google.genai.Client client, TourRepository tourRepository, DestinationRepository destinationRepository) {
-        this.client = client;
-        this.tourRepository = tourRepository;
-        this.destinationRepository = destinationRepository;
-    }
+    @Autowired
+    private TourService tourService; // Inject TourService để lọc sơ bộ
 
-    @PostConstruct
-    public void loadDataFromDb() {
-        this.tours = tourRepository.findAll();
-        this.destinations = destinationRepository.findAll();
-        System.out.println("Đã tải thành công " + tours.size() + " tour du lịch từ MongoDB.");
-        System.out.println("Đã tải thành công " + destinations.size() + " điểm đến từ MongoDB.");
-    }
-
-    public static String normalizeString(String input) {
-        if (input == null) return null;
-        String normalized = Normalizer.normalize(input, Normalizer.Form.NFD);
-        Pattern pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
-        return pattern.matcher(normalized).replaceAll("").toLowerCase();
-    }
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public Map<String, Object> askGemini(String prompt) {
         try {
-            // 1. ✅ Xây dựng "Kiến thức" đầy đủ hơn, bao gồm cả GIÁ TIỀN
+            // Bước 1: Dùng Text Search của MongoDB để lọc ra các tour có khả năng liên quan nhất
+            // Giới hạn kết quả để không gửi quá nhiều dữ liệu cho Gemini
+            List<Tour> candidateTours = tourService.findToursByKeywords(prompt, null);
+
+            // Nếu MongoDB không tìm thấy gì, trả về luôn để tiết kiệm chi phí API
+            if (candidateTours.isEmpty()) {
+                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với yêu cầu của bạn.");
+            }
+
+            // Bước 2: Xây dựng một "khối kiến thức" thu nhỏ chỉ từ các tour ứng viên
             StringBuilder tourKnowledgeBase = new StringBuilder();
-            for (Tour tour : this.tours) {
-                tourKnowledgeBase.append(String.format("id: \"%s\", title: \"%s\", price: %d, description: \"%s\", tags: \"%s\"\n",
+            for (Tour tour : candidateTours) {
+                // Cung cấp thông tin cốt lõi để Gemini có thể xếp hạng
+                tourKnowledgeBase.append(String.format("id: \"%s\", title: \"%s\", description: \"%s\", price: %d, tags: \"%s\"\n",
                         tour.getId(),
                         tour.getTitle(),
-                        tour.getPrice(), // Cung cấp giá cho AI
                         tour.getDescription(),
+                        tour.getPrice(),
                         tour.getTags() != null ? String.join(", ", tour.getTags()) : ""
                 ));
             }
 
-            // 2. ✅ Cập nhật Prompt để AI tự xử lý logic về GIÁ
+            // Bước 3: Tạo prompt mới, yêu cầu Gemini chọn lọc từ danh sách đã được rút gọn
             String geminiPrompt = String.format(
-                    "Bạn là một trợ lý tìm kiếm tour thông minh. Dựa vào danh sách tour CÓ SẴN dưới đây và câu hỏi của người dùng, hãy tìm ra các tour phù hợp nhất.\n\n" +
+                    "Bạn là một chuyên gia tư vấn du lịch thông minh. Dựa vào danh sách các tour CÓ SẴN dưới đây và câu hỏi của người dùng, hãy chọn ra những tour phù hợp nhất.\n\n" +
                             "### Nhiệm vụ:\n" +
-                            "1. Đọc kỹ câu hỏi của người dùng để hiểu họ muốn tìm tour gì.\n" +
-                            "2. **Xử lý yêu cầu về giá:** Nếu người dùng đề cập đến một mức giá hoặc ngân sách (ví dụ: '18 triệu', 'dưới 20 triệu', 'khoảng 15 triệu'), hãy so sánh nó với trường `price` của mỗi tour. Hãy tìm những tour có giá nhỏ hơn hoặc bằng ngân sách đó.\n" +
-                            "3. Dựa vào TẤT CẢ tiêu chí (địa điểm, giá, hoạt động...), quét qua 'DANH SÁCH TOUR CÓ SẴN' và tìm tất cả các tour khớp với yêu cầu.\n" +
-                            "4. Trả lời bằng một đối tượng JSON DUY NHẤT có cấu trúc sau:\n" +
-                            "   { \"found_tour_ids\": [\"id_tour_1\", \"id_tour_2\", ...] }\n" +
-                            "   - `found_tour_ids` là một mảng (array) chứa ID của TẤT CẢ các tour bạn tìm thấy.\n" +
-                            "   - Nếu không tìm thấy tour nào, trả về mảng rỗng: { \"found_tour_ids\": [] }.\n" +
+                            "1. Đọc kỹ câu hỏi của người dùng để hiểu rõ ý định, sở thích và ngân sách của họ.\n" +
+                            "2. Từ 'DANH SÁCH TOUR ỨNG VIÊN' được cung cấp, hãy tìm ra ID của những tour khớp với yêu cầu của người dùng nhất.\n" +
+                            "3. Trả lời bằng một đối tượng JSON DUY NHẤT có cấu trúc sau:\n" +
+                            "   { \"found_tour_ids\": [\"id_tour_phu_hop_nhat_1\", \"id_tour_phu_hop_nhat_2\", ...] }\n" +
+                            "   - Nếu không có tour nào trong danh sách ứng viên thực sự phù hợp, hãy trả về một mảng rỗng.\n" +
                             "   - KHÔNG thêm bất kỳ giải thích hay văn bản nào khác ngoài đối tượng JSON này.\n\n" +
-                            "### DANH SÁCH TOUR CÓ SẴN (Đơn vị giá là VNĐ):\n" +
+                            "### DANH SÁCH TOUR ỨNG VIÊN (Đơn vị giá là VNĐ):\n" +
                             "%s\n\n" +
                             "### Câu hỏi của người dùng:\n" +
                             "\"%s\"",
@@ -86,7 +69,7 @@ public class GeminiService {
                     prompt
             );
 
-            // 3. Gửi yêu cầu đến Gemini
+            // Bước 4: Gọi API Gemini với prompt đã được tối ưu
             GenerateContentResponse response = client.models.generateContent(
                     "gemini-1.5-flash-latest",
                     geminiPrompt,
@@ -96,33 +79,36 @@ public class GeminiService {
             String geminiResponseRaw = response.text().trim();
             System.out.println("Phản hồi từ Gemini (thô): " + geminiResponseRaw);
 
-            // 4. Xử lý phản hồi JSON từ Gemini
+            // Bước 5: Xử lý phản hồi JSON từ Gemini
             String geminiResponseJson = extractJson(geminiResponseRaw);
             if (geminiResponseJson.isEmpty()) {
-                return Map.of("success", true, "response", "Xin lỗi, tôi chưa hiểu ý bạn. Bạn có thể diễn đạt khác được không?");
+                // Nếu Gemini không trả về JSON, ta sẽ tạm trả về kết quả lọc sơ bộ của MongoDB
+                return formatSimpleTourList(candidateTours);
             }
 
-            ObjectMapper objectMapper = new ObjectMapper();
             JsonNode rootNode = objectMapper.readTree(geminiResponseJson);
-
-            List<String> foundTourIds = new ArrayList<>();
+            List<String> finalTourIds = new ArrayList<>();
             if (rootNode.has("found_tour_ids") && rootNode.get("found_tour_ids").isArray()) {
                 for (JsonNode idNode : rootNode.get("found_tour_ids")) {
-                    foundTourIds.add(idNode.asText());
+                    finalTourIds.add(idNode.asText());
                 }
             }
 
-            // 5. Lấy thông tin tour từ cache và định dạng phản hồi
-            List<Tour> filteredTours = this.tours.stream()
-                    .filter(tour -> foundTourIds.contains(tour.getId()))
+            // Nếu Gemini không chọn được tour nào, trả về danh sách rỗng
+            if (finalTourIds.isEmpty()) {
+                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với yêu cầu của bạn.");
+            }
+
+            // Bước 6: Lọc danh sách ứng viên ban đầu để lấy ra các tour cuối cùng do Gemini chọn
+            List<Tour> finalTours = candidateTours.stream()
+                    .filter(tour -> finalTourIds.contains(tour.getId()))
                     .collect(Collectors.toList());
 
-            if (filteredTours.size() == 1) {
-                return formatBasicTourInfo(filteredTours.get(0));
-            } else if (filteredTours.size() > 1) {
-                return formatSimpleTourList(filteredTours);
+            // Bước 7: Định dạng kết quả trả về
+            if (finalTours.size() == 1) {
+                return formatBasicTourInfo(finalTours.get(0));
             } else {
-                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với yêu cầu của bạn.");
+                return formatSimpleTourList(finalTours);
             }
 
         } catch (ClientException | IOException e) {
@@ -140,10 +126,8 @@ public class GeminiService {
         return "";
     }
 
-    // Các hàm format giữ nguyên
     private Map<String, Object> formatBasicTourInfo(Tour tour) {
         Map<String, Object> tourData = new HashMap<>();
-        String formattedPrice = String.format("%,d", tour.getPrice()).replace(',', '.');
         tourData.put("text", String.format("Tôi đã tìm thấy một tour rất phù hợp với bạn:\n**%s**", tour.getTitle()));
         tourData.put("image", tour.getImage());
         tourData.put("link", "/tours/" + tour.getId());
@@ -164,7 +148,7 @@ public class GeminiService {
         }
 
         Map<String, Object> responseData = new HashMap<>();
-        responseData.put("text", "Tuyệt vời! Tôi đã tìm thấy một vài tour phù hợp với yêu cầu của bạn:");
+        responseData.put("text", "Tuyệt vời! Dưới đây là những tour phù hợp nhất tôi tìm thấy cho bạn:");
         responseData.put("tours", tourListForResponse);
 
         return Map.of("success", true, "response", responseData);

@@ -60,4 +60,17 @@ public class UserService {
         user.setRole(newRole);
         return userRepository.save(user);
     }
+    /**
+     * ✅ HÀM MỚI: Cập nhật trạng thái khóa (suspend) của người dùng.
+     * @param userId ID của người dùng.
+     * @param isSuspended Trạng thái mới (true: khóa, false: mở khóa).
+     * @return User sau khi đã được cập nhật.
+     */
+    public User updateUserSuspension(String userId, boolean isSuspended) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID: " + userId));
+
+        user.setSuspended(isSuspended);
+        return userRepository.save(user);
+    }
 }

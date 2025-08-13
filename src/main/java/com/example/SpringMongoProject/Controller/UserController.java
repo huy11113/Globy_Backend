@@ -77,4 +77,21 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "message", e.getMessage()));
         }
     }
+    /**
+     * ✅ API MỚI: Cập nhật trạng thái khóa của người dùng (chỉ dành cho Admin).
+     */
+    @PutMapping("/{id}/suspend")
+    public ResponseEntity<Map<String, Object>> updateUserSuspension(@PathVariable String id, @RequestBody Map<String, Boolean> payload) {
+        try {
+            Boolean isSuspended = payload.get("suspended");
+            if (isSuspended == null) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Trường 'suspended' là bắt buộc."));
+            }
+            User updatedUser = userService.updateUserSuspension(id, isSuspended);
+            updatedUser.setPassword(null);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Cập nhật trạng thái thành công!", "data", updatedUser));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
 }
