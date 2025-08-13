@@ -1,22 +1,28 @@
+// File: src/main/java/com/example/SpringMongoProject/Service/TourService.java
+
 package com.example.SpringMongoProject.Service;
 
 import com.example.SpringMongoProject.Entity.Destination;
 import com.example.SpringMongoProject.Entity.Tour;
 import com.example.SpringMongoProject.Repo.DestinationRepository;
 import com.example.SpringMongoProject.Repo.TourRepository;
+import com.example.SpringMongoProject.dto.ExtractedEntities;
+import org.bson.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.*;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.TextCriteria;
-import org.springframework.data.mongodb.core.query.TextQuery;
 import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -32,15 +38,11 @@ public class TourService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    public Page<Tour> findTours(String searchTerm, String sortBy, int page, int limit,
-                                // Đã sửa thành Long để khớp với Controller
-                                Long maxPrice,
-                                Boolean featured, String destinationId) {
-
+    // PHƯƠNG THỨC NÀY DÀNH CHO TRANG DANH SÁCH TOUR (FILTER THÔNG THƯỜNG)
+    public Page<Tour> findTours(String searchTerm, String sortBy, int page, int limit, Long maxPrice, Boolean featured, String destinationId) {
         Pageable pageable = PageRequest.of(page - 1, limit);
         Query query = new Query().with(pageable);
-
-        List<Criteria> criteriaList = new java.util.ArrayList<>();
+        List<Criteria> criteriaList = new ArrayList<>();
         if (searchTerm != null && !searchTerm.isEmpty()) {
             criteriaList.add(new Criteria().orOperator(
                     Criteria.where("title").regex(searchTerm, "i"),
@@ -63,14 +65,79 @@ public class TourService {
             String sortField = sortBy.startsWith("-") ? sortBy.substring(1) : sortBy;
             query.with(Sort.by(direction, sortField));
         }
-
         List<Tour> tours = mongoTemplate.find(query, Tour.class);
         long total = mongoTemplate.count(Query.of(query).limit(-1).skip(-1), Tour.class);
-
         populateDestinationsForTours(tours);
         return PageableExecutionUtils.getPage(tours, pageable, () -> total);
     }
 
+    /**
+     * ✅ PHƯƠNG THỨC TÌM KIẾM MỚI DÀNH RIÊNG CHO CHATBOT AI
+     * Sử dụng Atlas Search ($search) để tìm kiếm thông minh.
+     */
+    public List<Tour> findToursWithFilters(ExtractedEntities entities) {
+        List<AggregationOperation> pipelineOperations = new ArrayList<>();
+
+        // BƯỚC 1: LUÔN LUÔN BẮT ĐẦU VỚI $search
+        // Tìm kiếm văn bản bằng Atlas Search Index để thu hẹp kết quả một cách hiệu quả nhất.
+        if (StringUtils.hasText(entities.getKeywords())) {
+            AggregationOperation searchOperation = context -> new Document("$search",
+                    new Document("index", "text_search_index") // Tên index của bạn
+                            .append("text", new Document("query", entities.getKeywords())
+                                    .append("path", Arrays.asList("title", "description", "city", "category", "tags"))
+                            )
+            );
+            pipelineOperations.add(searchOperation);
+        }
+
+        // BƯỚC 2: Nối (join) với collection 'destinations' để lấy thông tin châu lục/tên địa điểm
+        AggregationOperation lookupOperation = Aggregation.lookup("destinations", "destinationId", "_id", "destinationDetails");
+        pipelineOperations.add(lookupOperation);
+
+        // BƯỚC 3: Lọc chi tiết (match) trên tập dữ liệu đã thu hẹp và join
+        List<Criteria> criteriaList = new ArrayList<>();
+
+        // Lọc "cứng" theo địa điểm (location)
+        if (StringUtils.hasText(entities.getLocation())) {
+            criteriaList.add(new Criteria().orOperator(
+                    Criteria.where("city").regex(entities.getLocation(), "i"),
+                    // Lọc trên kết quả đã được join từ bước lookup
+                    Criteria.where("destinationDetails.name").regex(entities.getLocation(), "i"),
+                    Criteria.where("destinationDetails.continent").regex(entities.getLocation(), "i")
+            ));
+        }
+
+        // Các bộ lọc khác
+        if (entities.getMaxPrice() != null && entities.getMaxPrice() > 0) {
+            criteriaList.add(Criteria.where("price").lte(entities.getMaxPrice()));
+        }
+        if (StringUtils.hasText(entities.getCategory())) {
+            criteriaList.add(Criteria.where("category").regex(entities.getCategory(), "i"));
+        }
+        if (StringUtils.hasText(entities.getDuration())) {
+            criteriaList.add(Criteria.where("duration").regex(entities.getDuration(), "i"));
+        }
+
+        if (!criteriaList.isEmpty()) {
+            MatchOperation matchOperation = Aggregation.match(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
+            pipelineOperations.add(matchOperation);
+        }
+
+        // BƯỚC 4: Giới hạn số lượng kết quả cuối cùng
+        LimitOperation limitOperation = Aggregation.limit(20);
+        pipelineOperations.add(limitOperation);
+
+        // Thực thi truy vấn
+        Aggregation aggregation = Aggregation.newAggregation(pipelineOperations);
+        AggregationResults<Tour> results = mongoTemplate.aggregate(aggregation, "tours", Tour.class);
+        List<Tour> candidateTours = results.getMappedResults();
+
+        populateDestinationsForTours(candidateTours);
+        return candidateTours;
+    }
+
+
+    // CÁC HÀM CŨ GIỮ NGUYÊN
     public Tour findTourById(String id) {
         Tour tour = tourRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tour với ID: " + id));
@@ -105,7 +172,6 @@ public class TourService {
     public Tour updateTour(String id, Tour tourDetails) {
         Tour tour = tourRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tour với ID: " + id));
-
         tour.setTitle(tourDetails.getTitle());
         tour.setCity(tourDetails.getCity());
         tour.setDescription(tourDetails.getDescription());
@@ -123,7 +189,6 @@ public class TourService {
         tour.setCategory(tourDetails.getCategory());
         tour.setDepartures(tourDetails.getDepartures());
         tour.setItinerary(tourDetails.getItinerary());
-
         return tourRepository.save(tour);
     }
 
@@ -133,30 +198,4 @@ public class TourService {
         }
         tourRepository.deleteById(id);
     }
-    // ✅ Thêm phương thức mới này vào
-    public List<Tour> findToursByKeywords(String userQuery, Long maxPrice) {
-        // 1. Tạo tiêu chí tìm kiếm văn bản từ câu hỏi của người dùng
-        TextCriteria criteria = TextCriteria.forDefaultLanguage()
-                .matchingAny(userQuery.split("\\s+")); // Tách câu hỏi thành các từ khóa
-
-        // 2. Tạo truy vấn Text Search và sắp xếp theo độ liên quan
-        Query query = TextQuery.queryText(criteria).sortByScore();
-
-        // 3. Thêm bộ lọc giá (nếu có)
-        if (maxPrice != null && maxPrice > 0) {
-            query.addCriteria(Criteria.where("price").lte(maxPrice));
-        }
-
-        // 4. Giới hạn số lượng kết quả để không gửi quá nhiều cho Gemini, giúp tiết kiệm chi phí
-        query.limit(20);
-
-        // 5. Thực thi và trả về các tour ứng viên
-        List<Tour> candidateTours = mongoTemplate.find(query, Tour.class);
-
-        // 6. Làm đầy thông tin destination cho các tour tìm được (quan trọng)
-        populateDestinationsForTours(candidateTours);
-
-        return candidateTours;
-    }
-
 }

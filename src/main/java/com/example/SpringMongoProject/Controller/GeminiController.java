@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
+import com.example.SpringMongoProject.dto.ChatRequest;
 
 @RestController
 @RequestMapping("/api/chatbot")
@@ -14,12 +15,14 @@ public class GeminiController {
     private final GeminiService geminiService;
 
     @PostMapping("/ask")
-    public ResponseEntity<Map<String, Object>> askChatbot(@RequestBody String prompt) {
+    // ✅ Sửa lại để nhận vào đối tượng ChatRequest
+    public ResponseEntity<Map<String, Object>> askChatbot(@RequestBody ChatRequest chatRequest) {
         try {
-            // Phương thức askGemini() giờ đây trả về Map<String, Object>
-            Map<String, Object> response = geminiService.askGemini(prompt);
+            // ✅ Gọi phương thức mới có khả năng xử lý "trí nhớ"
+            Map<String, Object> response = geminiService.askGeminiWithMemory(chatRequest.getHistory());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("success", false, "message", "Đã xảy ra lỗi: " + e.getMessage()));
         }
     }
