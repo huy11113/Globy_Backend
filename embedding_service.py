@@ -36,6 +36,8 @@ def embed_text():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    print("Trợ lý AI đang lắng nghe trên cổng 5001...")
-    # Chạy "trợ lý" trên cổng 5001
-    app.run(host='0.0.0.0', port=5001)
+    # Lấy cổng từ biến môi trường của Render, nếu không có thì mặc định là 5001
+    port = int(os.environ.get('PORT', 5001))
+    print(f"Trợ lý AI đang lắng nghe trên cổng {port}...")
+    # Chạy server với cổng được Render cung cấp
+    app.run(host='0.0.0.0', port=port)
