@@ -38,4 +38,4 @@ def embed_text():
 if __name__ == '__main__':
     print("Trợ lý AI đang lắng nghe trên cổng 5001...")
     # Chạy "trợ lý" trên cổng 5001
-    app.run(port=5001)
+    app.run(host='0.0.0.0', port=5001)

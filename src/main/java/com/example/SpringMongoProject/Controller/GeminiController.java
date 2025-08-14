@@ -16,10 +16,9 @@ public class GeminiController {
 
     @PostMapping("/ask")
     // ✅ Sửa lại để nhận vào đối tượng ChatRequest
-    public ResponseEntity<Map<String, Object>> askChatbot(@RequestBody ChatRequest chatRequest) {
+    public ResponseEntity<Map<String, Object>> askChatbot(@RequestBody String prompt) {
         try {
-            // ✅ Gọi phương thức mới có khả năng xử lý "trí nhớ"
-            Map<String, Object> response = geminiService.askGeminiWithMemory(chatRequest.getHistory());
+            Map<String, Object> response = geminiService.askGemini(prompt);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
