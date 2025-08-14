@@ -1,11 +1,12 @@
+// File: src/main/java/com/example/SpringMongoProject/Controller/GeminiController.java
 package com.example.SpringMongoProject.Controller;
 
 import com.example.SpringMongoProject.Service.GeminiService;
+import com.example.SpringMongoProject.dto.ChatRequest; // Thêm import này
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
-import com.example.SpringMongoProject.dto.ChatRequest;
 
 @RestController
 @RequestMapping("/api/chatbot")
@@ -15,10 +16,11 @@ public class GeminiController {
     private final GeminiService geminiService;
 
     @PostMapping("/ask")
-    // ✅ Sửa lại để nhận vào đối tượng ChatRequest
-    public ResponseEntity<Map<String, Object>> askChatbot(@RequestBody String prompt) {
+    // ✅ Endpoint này nhận vào đối tượng ChatRequest có chứa lịch sử chat
+    public ResponseEntity<Map<String, Object>> askChatbot(@RequestBody ChatRequest chatRequest) {
         try {
-            Map<String, Object> response = geminiService.askGemini(prompt);
+            // ✅ Gọi phương thức askGeminiWithMemory
+            Map<String, Object> response = geminiService.askGeminiWithMemory(chatRequest.getHistory());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
