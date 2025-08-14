@@ -36,42 +36,39 @@ public class GeminiService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public Map<String, Object> askGeminiWithMemory(List<ChatMessage> history) {
+    // ✅ Đổi lại thành askGemini(String prompt) để đơn giản hóa
+    public Map<String, Object> askGemini(String prompt) {
         try {
-            String latestPrompt = history.get(history.size() - 1).getText();
-            StringBuilder context = new StringBuilder();
-            history.stream().limit(Math.max(0, history.size() - 1)).skip(Math.max(0, history.size() - 5))
-                    .forEach(msg -> {
-                        String role = msg.isFromUser() ? "User" : "AI";
-                        context.append(role).append(": ").append(msg.getText()).append("\n");
-                    });
+            // Bước 1: "Số hóa" câu hỏi thành vector
+            List<Double> queryVector = embeddingService.createEmbedding(prompt);
 
-            ExtractedEntities entities = extractEntitiesFromPrompt(latestPrompt, context.toString());
-            List<Double> queryVector = embeddingService.createEmbedding(entities.getKeywords());
-            List<String> similarTourIds = tourVectorCache.findSimilarTourIds(queryVector, 50);
+            // Bước 2: Tìm kiếm ngữ nghĩa trong bộ nhớ
+            List<String> similarTourIds = tourVectorCache.findSimilarTourIds(queryVector, 20);
 
             if (similarTourIds.isEmpty()) {
                 return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp.");
             }
 
-            List<Tour> candidateTours = tourRepository.findAllById(similarTourIds);
-            List<Tour> filteredTours = filterCandidates(candidateTours, entities);
+            // Sắp xếp lại danh sách tour tìm thấy theo đúng thứ tự tương đồng
+            List<Tour> foundTours = similarTourIds.stream()
+                    .flatMap(id -> tourRepository.findById(id).stream())
+                    .collect(Collectors.toList());
 
-            if (filteredTours.isEmpty()) {
-                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.");
+            tourService.populateDestinationsForTours(foundTours);
+
+            if (foundTours.isEmpty()){
+                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp.");
+            } else if (foundTours.size() == 1) {
+                return formatBasicTourInfo(foundTours.get(0));
+            } else {
+                return formatSimpleTourList(foundTours);
             }
-            if (filteredTours.size() == 1) {
-                tourService.populateDestinationsForTours(filteredTours);
-                return formatBasicTourInfo(filteredTours.get(0));
-            }
-
-            return rankAndSelectTours(filteredTours, latestPrompt, entities.getLocation());
-
         } catch (Exception e) {
             e.printStackTrace();
-            return Map.of("success", false, "message", "Đã xảy ra lỗi khi xử lý yêu cầu của bạn: " + e.getMessage());
+            return Map.of("success", false, "message", "Đã xảy ra lỗi khi xử lý yêu cầu: " + e.getMessage());
         }
     }
+
 
     private List<Tour> filterCandidates(List<Tour> candidates, ExtractedEntities entities) {
         return candidates.stream()
