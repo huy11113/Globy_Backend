@@ -3,7 +3,7 @@ package com.example.SpringMongoProject.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Value; // Thêm import này
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -20,8 +20,7 @@ public class EmbeddingService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // ✅ TỐT HƠN: Đọc URL từ biến môi trường, linh hoạt hơn cho production
-    @Value("${EMBEDDING_SERVICE_URL:http://127.0.0.1:5001/embed}") // Giá trị mặc định là localhost
+    @Value("${EMBEDDING_SERVICE_URL:http://127.0.0.1:5001/embed}")
     private String embeddingServiceUrl;
 
     public List<Double> createEmbedding(String text) {
