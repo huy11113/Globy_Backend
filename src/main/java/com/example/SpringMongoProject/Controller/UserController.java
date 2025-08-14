@@ -94,4 +94,18 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
         }
     }
+    /**
+     * ✅ API MỚI: Cập nhật thông tin cá nhân (tên, sđt, avatar...).
+     */
+    @PutMapping("/{id}/profile")
+    public ResponseEntity<Map<String, Object>> updateProfile(@PathVariable String id, @RequestBody User updatedData) {
+        try {
+            User updatedUser = userService.updateProfile(id, updatedData);
+            updatedUser.setPassword(null);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Cập nhật thông tin thành công!", "data", updatedUser));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
 }
