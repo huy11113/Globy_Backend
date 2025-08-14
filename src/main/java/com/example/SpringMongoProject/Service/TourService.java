@@ -145,22 +145,33 @@ public class TourService {
         return tour;
     }
 
-    private void populateDestinationsForTours(List<Tour> tours) {
+    /**
+     * ✅ Sửa "private" thành "public" để GeminiService có thể gọi
+     * Làm đầy thông tin Destination cho một danh sách các Tour.
+     */
+    public void populateDestinationsForTours(List<Tour> tours) {
         if (tours == null || tours.isEmpty()) return;
+
+        // Lấy danh sách các destinationId duy nhất từ các tour
         List<String> destIds = tours.stream()
                 .map(Tour::getDestinationId)
                 .filter(id -> id != null && !id.isEmpty())
                 .distinct()
                 .collect(Collectors.toList());
+
         if (destIds.isEmpty()) return;
+
+        // Tìm tất cả các destination tương ứng trong một lần gọi DB
         List<Destination> destinations = destinationRepository.findAllById(destIds);
         Map<String, Destination> destMap = destinations.stream()
-                .collect(Collectors.toMap(Destination::getId, Function.identity(), (existing, replacement) -> existing));
-        for (Tour tour : tours) {
+                .collect(Collectors.toMap(Destination::getId, Function.identity()));
+
+        // Gán đối tượng Destination vào từng tour
+        tours.forEach(tour -> {
             if (tour.getDestinationId() != null) {
                 tour.setDestination(destMap.get(tour.getDestinationId()));
             }
-        }
+        });
     }
 
     public Tour createTour(Tour tourData) {
