@@ -8,7 +8,8 @@ import lombok.Data;
 public class ExtractedEntities {
     private String keywords;
     private Long maxPrice;
+    private Long minPrice;
     private String category;
     private String duration;
-    private String location; // ✅ THÊM DÒNG NÀY
+    private String location;
 }

@@ -39,20 +39,14 @@ public class UserService {
         if (!userRepository.existsById(userId)) {
             throw new RuntimeException("Không tìm thấy người dùng với ID: " + userId);
         }
+        // Thêm logic xóa các dữ liệu liên quan (bookings, reviews) ở đây nếu cần
         userRepository.deleteById(userId);
     }
 
-    /**
-     * ✅ HÀM MỚI: Cập nhật vai trò (role) của người dùng.
-     * @param userId ID của người dùng.
-     * @param newRole Vai trò mới ('admin' hoặc 'user').
-     * @return User sau khi đã được cập nhật.
-     */
     public User updateUserRole(String userId, String newRole) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID: " + userId));
 
-        // Chỉ cho phép cập nhật thành 'admin' hoặc 'user' để bảo mật
         if (!"admin".equals(newRole) && !"user".equals(newRole)) {
             throw new IllegalArgumentException("Vai trò không hợp lệ: " + newRole);
         }
@@ -60,17 +54,43 @@ public class UserService {
         user.setRole(newRole);
         return userRepository.save(user);
     }
-    /**
-     * ✅ HÀM MỚI: Cập nhật trạng thái khóa (suspend) của người dùng.
-     * @param userId ID của người dùng.
-     * @param isSuspended Trạng thái mới (true: khóa, false: mở khóa).
-     * @return User sau khi đã được cập nhật.
-     */
+
     public User updateUserSuspension(String userId, boolean isSuspended) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID: " + userId));
 
         user.setSuspended(isSuspended);
+        return userRepository.save(user);
+    }
+
+    /**
+     * ✅ HÀM MỚI: Cập nhật thông tin cá nhân (tên, sđt) của người dùng.
+     * @param userId ID của người dùng.
+     * @param updatedData Dữ liệu mới cần cập nhật.
+     * @return User sau khi đã được cập nhật.
+     */
+    public User updateProfile(String userId, User updatedData) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID: " + userId));
+
+        // Cập nhật tên nếu có
+        if (updatedData.getName() != null && !updatedData.getName().isEmpty()) {
+            user.setName(updatedData.getName());
+        }
+
+        // Cập nhật SĐT nếu có và SĐT đó chưa tồn tại
+        if (updatedData.getPhoneNumber() != null && !updatedData.getPhoneNumber().equals(user.getPhoneNumber())) {
+            userRepository.findByPhoneNumber(updatedData.getPhoneNumber()).ifPresent(u -> {
+                throw new IllegalStateException("Số điện thoại đã tồn tại.");
+            });
+            user.setPhoneNumber(updatedData.getPhoneNumber());
+        }
+
+        // Cập nhật avatar nếu có
+        if (updatedData.getAvatar() != null && !updatedData.getAvatar().isEmpty()) {
+            user.setAvatar(updatedData.getAvatar());
+        }
+
         return userRepository.save(user);
     }
 }

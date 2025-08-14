@@ -33,6 +33,7 @@ public class GeminiService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
 
+
     public Map<String, Object> askGeminiWithMemory(List<ChatMessage> history) {
         try {
             String latestPrompt = history.get(history.size() - 1).getText();
@@ -46,7 +47,7 @@ public class GeminiService {
             System.out.println("\n----------- BẮT ĐẦU XỬ LÝ YÊU CẦU -----------");
             System.out.println("[LOG] Câu hỏi mới từ người dùng: " + latestPrompt);
 
-            // Bước 1: Gọi AI một lần duy nhất
+            // Bước 1: Gọi AI một lần duy nhất để phân tích toàn diện
             Map<String, Object> aiDecision = getAiDecision(latestPrompt, context.toString());
             ExtractedEntities entities = (ExtractedEntities) aiDecision.get("entities");
 
@@ -58,7 +59,7 @@ public class GeminiService {
             System.out.println("[LOG] Tìm thấy " + similarTourIds.size() + " tour tương đồng ban đầu.");
 
             if (similarTourIds.isEmpty()) {
-                return handleNoResults("Không có tour tương đồng ban đầu", null);
+                return handleNoResults("Không có tour tương đồng ban đầu", entities, Collections.emptyList());
             }
 
             // Bước 3: Lấy dữ liệu và làm đầy thông tin
@@ -73,7 +74,7 @@ public class GeminiService {
             if (filteredTours.isEmpty() && (entities.getMaxPrice() != null || entities.getCategory() != null || entities.getDuration() != null)) {
                 System.out.println("[LOG] Không có kết quả, thử nới lỏng bộ lọc (giữ lại địa điểm)...");
                 ExtractedEntities relaxedEntities = new ExtractedEntities();
-                relaxedEntities.setLocation(entities.getLocation()); // Chỉ giữ lại địa điểm
+                relaxedEntities.setLocation(entities.getLocation());
                 relaxedEntities.setKeywords(entities.getKeywords());
 
                 filteredTours = filterCandidates(candidateTours, relaxedEntities);
@@ -81,7 +82,7 @@ public class GeminiService {
             }
 
             if (filteredTours.isEmpty()) {
-                return handleNoResults("Không tour nào vượt qua bộ lọc, kể cả khi đã nới lỏng", entities.getLocation());
+                return handleNoResults("Không tour nào vượt qua bộ lọc, kể cả khi đã nới lỏng", entities, candidateTours);
             }
 
             // Bước 6: Trả về kết quả
@@ -105,17 +106,20 @@ public class GeminiService {
             return Map.of("success", false, "message", "Đã xảy ra lỗi khi xử lý yêu cầu của bạn: " + e.getMessage());
         }
     }
+
     private Map<String, Object> getAiDecision(String prompt, String context) throws Exception {
         String decisionPrompt = String.format(
                 "Bạn là bộ não của một trợ lý du lịch siêu thông minh. Phân tích CÂU HỎI MỚI NHẤT và NGỮ CẢNH HỘI THOẠI, sau đó trả về một JSON duy nhất chứa 2 phần: `entities` (các thông tin trích xuất) và `action` (hành động tiếp theo).\n\n" +
                         "### QUY TẮC TRÍCH XUẤT `entities` (Rất quan trọng):\n" +
                         "1.  `keywords`: Luôn trả về từ khóa chính, súc tích nhất để tìm kiếm. (ví dụ: 'tour đi biển đà nẵng giá rẻ').\n" +
                         "2.  `location`: Chỉ trả về địa danh (thành phố, quốc gia) nếu được nêu rõ. Nếu không, BẮT BUỘC là null.\n" +
-                        "3.  `max_price`: Chỉ trả về SỐ NGUYÊN nếu người dùng nêu rõ. SUY LUẬN:\n" +
-                        "    - 'dưới 10 triệu', 'không quá 10 triệu' -> 10000000\n" +
-                        "    - 'tầm 7 triệu', 'khoảng 7 triệu' -> 7000000 (sẽ được xử lý khoảng giá sau)\n" +
-                        "    - 'giá rẻ', 'tiết kiệm' -> 5000000 (giả định một mức giá hợp lý)\n" +
-                        "    - Nếu không đề cập, BẮT BUỘC là null.\n" +
+                        "3.  `min_price` và `max_price`: Chỉ trả về SỐ NGUYÊN nếu có. SUY LUẬN:\n" +
+                        "    - 'dưới 10 triệu', 'không quá 10 triệu' -> { \"min_price\": null, \"max_price\": 10000000 }\n" +
+                        "    - 'trên 10 triệu', 'từ 10 triệu trở lên' -> { \"min_price\": 10000000, \"max_price\": null }\n" +
+                        "    - 'tầm 7 triệu', 'khoảng 7 triệu' -> { \"min_price\": 6000000, \"max_price\": 8000000 }\n" +
+                        "    - 'từ 5 đến 10 triệu' -> { \"min_price\": 5000000, \"max_price\": 10000000 }\n" +
+                        "    - 'giá rẻ' -> { \"min_price\": null, \"max_price\": 5000000 }\n" +
+                        "    - Nếu không đề cập giá, cả hai BẮT BUỘC là null.\n\n" +
                         "4.  `category`: Chỉ trả về loại hình tour nếu có. SUY LUẬN:\n" +
                         "    - 'đi biển', 'tắm biển', 'nghỉ mát ở biển' -> 'biển'\n" +
                         "    - 'leo núi', 'khám phá', 'trekking' -> 'mạo hiểm'\n" +
@@ -175,40 +179,65 @@ public class GeminiService {
     private List<Tour> filterCandidates(List<Tour> candidates, ExtractedEntities entities) {
         return candidates.stream()
                 .filter(tour -> {
-                    // Location Match (City, Title, Destination Name, Continent)
                     boolean locationMatch = !StringUtils.hasText(entities.getLocation()) ||
                             (tour.getCity() != null && tour.getCity().toLowerCase().contains(entities.getLocation().toLowerCase())) ||
                             (tour.getTitle() != null && tour.getTitle().toLowerCase().contains(entities.getLocation().toLowerCase())) ||
-                            (tour.getDestination() != null && tour.getDestination().getName().toLowerCase().contains(entities.getLocation().toLowerCase())) ||
-                            (tour.getDestination() != null && tour.getDestination().getContinent().toLowerCase().contains(entities.getLocation().toLowerCase()));
+                            (tour.getDestination() != null && tour.getDestination().getName().toLowerCase().contains(entities.getLocation().toLowerCase()));
 
-                    // Price Match (Flexible)
                     boolean priceMatch = true;
-                    if (entities.getMaxPrice() != null && tour.getPrice() != null) {
-                        if (entities.getKeywords().toLowerCase().contains("tầm") || entities.getKeywords().toLowerCase().contains("khoảng")) {
-                            long lowerBound = entities.getMaxPrice() - 2000000; // Khoảng giá 4 triệu
-                            long upperBound = entities.getMaxPrice() + 2000000;
-                            priceMatch = tour.getPrice() >= lowerBound && tour.getPrice() <= upperBound;
-                        } else {
-                            priceMatch = tour.getPrice() <= entities.getMaxPrice();
+                    if (tour.getPrice() != null) {
+                        if (entities.getMinPrice() != null && tour.getPrice() < entities.getMinPrice()) {
+                            priceMatch = false;
                         }
+                        if (entities.getMaxPrice() != null && tour.getPrice() > entities.getMaxPrice()) {
+                            priceMatch = false;
+                        }
+                    } else { // Tour không có giá thì không khớp nếu có bộ lọc giá
+                        if(entities.getMinPrice() != null || entities.getMaxPrice() != null) priceMatch = false;
                     }
 
-                    // Category Match (Flexible)
                     boolean categoryMatch = !StringUtils.hasText(entities.getCategory()) ||
                             (tour.getCategory() != null && tour.getCategory().toLowerCase().contains(entities.getCategory().toLowerCase())) ||
-                            (tour.getTitle().toLowerCase().contains(entities.getCategory().toLowerCase())) ||
-                            (tour.getDescription().toLowerCase().contains(entities.getCategory().toLowerCase()));
+                            (tour.getTitle().toLowerCase().contains(entities.getCategory().toLowerCase()));
 
-                    // Duration Match (Flexible)
                     boolean durationMatch = !StringUtils.hasText(entities.getDuration()) ||
-                            (tour.getDuration() != null && tour.getDuration().toLowerCase().contains(entities.getDuration().replace(" ", "").toLowerCase()));
+                            (tour.getDuration() != null && tour.getDuration().toLowerCase().replaceAll("\\s+", "").contains(entities.getDuration().replaceAll("\\s+", "").toLowerCase()));
 
                     return locationMatch && priceMatch && categoryMatch && durationMatch;
                 })
                 .collect(Collectors.toList());
     }
-    // ... (Các hàm tiện ích khác giữ nguyên không đổi)
+
+    private Map<String, Object> handleNoResults(String reason, ExtractedEntities entities, List<Tour> initialCandidates) {
+        System.out.println("----------- KẾT THÚC (Lý do: " + reason + ") -----------");
+
+        // Logic gợi ý thông minh
+        if (initialCandidates != null && !initialCandidates.isEmpty()) {
+            String suggestionPrompt = String.format(
+                    "Bạn là một trợ lý du lịch thân thiện. Khách hàng tìm kiếm tour với một số tiêu chí nhưng không có kết quả. Dựa vào yêu cầu ban đầu của khách và danh sách các tour GẦN GIỐNG, hãy đưa ra một lời gợi ý hữu ích và tự nhiên.\n\n" +
+                            "### QUY TẮC:\n" +
+                            "- Bắt đầu bằng 'Rất tiếc, tôi không tìm thấy tour nào khớp chính xác...'\n" +
+                            "- Đưa ra một gợi ý thay thế. Ví dụ: '...nhưng bạn có muốn xem các tour khác cũng ở %s không?' hoặc '...nhưng tôi có một vài lựa chọn đi biển khác rất thú vị:'.\n" +
+                            "- Trả lời ngắn gọn, không cần liệt kê lại tour.\n\n" +
+                            "### YÊU CẦU BAN ĐẦU:\n%s\n\n" +
+                            "### DANH SÁCH TOUR GẦN GIỐNG ĐỂ THAM KHẢO:\n" +
+                            "%s\n\n" +
+                            "### LỜI GỢI Ý CỦA BẠN:\n",
+                    entities != null ? entities.toString() : "Không có",
+                    initialCandidates.stream().map(Tour::getTitle).limit(5).collect(Collectors.joining("\n"))
+            );
+            try {
+                GenerateContentResponse response = client.models.generateContent("gemini-1.5-flash-latest", suggestionPrompt, null);
+                return Map.of("success", true, "response", response.text());
+            } catch (Exception e) {
+                // Fallback nếu có lỗi
+            }
+        }
+
+        String message = "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.";
+        return Map.of("success", true, "response", message);
+    }
+    // Các hàm tiện ích
     private Map<String, Object> handleNoResults(String reason, String location) {
         System.out.println("----------- KẾT THÚC (Lý do: " + reason + ") -----------");
         String message = "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.";
