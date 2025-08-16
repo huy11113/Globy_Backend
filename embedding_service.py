@@ -1,16 +1,18 @@
-# File mới: embedding_service.py
+# File: embedding_service.py
 from flask import Flask, request, jsonify
-import google.generativeai as genai
+import requests
 import os
+import json
 
 # Lấy API Key từ biến môi trường
-# Chúng ta sẽ thiết lập biến này ở bước chạy
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 if not GOOGLE_API_KEY:
     raise ValueError("Lỗi: Chưa thiết lập biến môi trường GOOGLE_API_KEY")
 
-genai.configure(api_key=GOOGLE_API_KEY)
 app = Flask(__name__)
+
+# URL Endpoint của Google Gemini cho embedding
+GEMINI_EMBEDDING_URL = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
 
 @app.route('/embed', methods=['POST'])
 def embed_text():
@@ -21,23 +23,40 @@ def embed_text():
 
         text_to_embed = data['text']
 
-        # Gọi API của Google để tạo vector
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text_to_embed,
-            task_type="RETRIEVAL_QUERY"
-        )
+        # Dữ liệu payload cho API
+        payload = {
+            "model": "models/text-embedding-004",
+            "content": {
+                "parts": [
+                    {"text": text_to_embed}
+                ]
+            },
+            "task_type": "RETRIEVAL_QUERY"
+        }
 
-        # Trả về vector dưới dạng JSON
-        return jsonify({"embedding": result['embedding']})
+        # Header yêu cầu, bao gồm API Key
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GOOGLE_API_KEY
+        }
 
+        # Gửi yêu cầu HTTP POST trực tiếp đến API của Google
+        response = requests.post(GEMINI_EMBEDDING_URL, headers=headers, data=json.dumps(payload))
+        response.raise_for_status() # Ném lỗi nếu mã trạng thái không phải 2xx
+
+        # Xử lý kết quả trả về
+        result = response.json()
+        embedding = result['embedding']
+        return jsonify({"embedding": embedding})
+
+    except requests.exceptions.RequestException as e:
+        print(f"LỖI KẾT NỐI VỚI GOOGLE API: {e}")
+        return jsonify({"error": "Không thể kết nối với dịch vụ Google AI. " + str(e)}), 500
     except Exception as e:
         print(f"Đã xảy ra lỗi trong dịch vụ Python: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Lỗi nội bộ. " + str(e)}), 500
 
 if __name__ == '__main__':
-    # Lấy cổng từ biến môi trường của Render, nếu không có thì mặc định là 5001
     port = int(os.environ.get('PORT', 5001))
     print(f"Trợ lý AI đang lắng nghe trên cổng {port}...")
-    # Chạy server với cổng được Render cung cấp
     app.run(host='0.0.0.0', port=port)
