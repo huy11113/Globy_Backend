@@ -141,7 +141,7 @@ public class GeminiService {
                 prompt
         );
 
-        GenerateContentResponse response = client.models.generateContent("gemini-1.5-flash-latest", decisionPrompt, null);
+        GenerateContentResponse response = client.models.generateContent("gemini-2.5-flash", decisionPrompt, null);
         String jsonResponse = extractJson(response.text().trim());
         JsonNode rootNode = objectMapper.readTree(jsonResponse);
 
