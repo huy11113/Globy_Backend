@@ -1,3 +1,6 @@
 Flask
 gunicorn
 google-generativeai
+google-api-core
+grpcio
+requests
