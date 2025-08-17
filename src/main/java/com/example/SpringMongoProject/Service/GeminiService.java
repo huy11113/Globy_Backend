@@ -1,4 +1,5 @@
 // File: src/main/java/com/example/SpringMongoProject/Service/GeminiService.java
+
 package com.example.SpringMongoProject.Service;
 
 import com.example.SpringMongoProject.Entity.Tour;
@@ -32,8 +33,6 @@ public class GeminiService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-
-
     public Map<String, Object> askGeminiWithMemory(List<ChatMessage> history) {
         try {
             String latestPrompt = history.get(history.size() - 1).getText();
@@ -50,8 +49,16 @@ public class GeminiService {
             // Bước 1: Gọi AI một lần duy nhất để phân tích toàn diện
             Map<String, Object> aiDecision = getAiDecision(latestPrompt, context.toString());
             ExtractedEntities entities = (ExtractedEntities) aiDecision.get("entities");
+            String action = (String) aiDecision.get("action");
 
             System.out.println("[LOG] Các thực thể AI trích xuất được: " + entities.toString());
+            System.out.println("[LOG] Hành động được đề xuất: " + action);
+
+            // Bước 1.5: Xử lý các câu hỏi không liên quan
+            if ("off_topic".equals(action)) {
+                System.out.println("----------- KẾT THÚC (Lý do: Câu hỏi không liên quan đến du lịch) -----------");
+                return Map.of("success", true, "response", "Tôi là trợ lý du lịch của Globy. Tôi chỉ có thể giúp bạn tìm kiếm thông tin về các tour và điểm đến thôi. Bạn có muốn tìm một chuyến đi nào không?");
+            }
 
             // Bước 2: Tìm kiếm ngữ nghĩa
             List<Double> queryVector = embeddingService.createEmbedding(entities.getKeywords());
@@ -59,7 +66,8 @@ public class GeminiService {
             System.out.println("[LOG] Tìm thấy " + similarTourIds.size() + " tour tương đồng ban đầu.");
 
             if (similarTourIds.isEmpty()) {
-                return handleNoResults("Không có tour tương đồng ban đầu", entities, Collections.emptyList());
+                // Trả về thông báo đơn giản, không có gợi ý.
+                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.");
             }
 
             // Bước 3: Lấy dữ liệu và làm đầy thông tin
@@ -70,23 +78,12 @@ public class GeminiService {
             List<Tour> filteredTours = filterCandidates(candidateTours, entities);
             System.out.println("[LOG] Sau khi lọc, còn lại: " + filteredTours.size() + " tour.");
 
-            // Bước 5: Logic tự động nới lỏng bộ lọc nếu không có kết quả
-            if (filteredTours.isEmpty() && (entities.getMaxPrice() != null || entities.getCategory() != null || entities.getDuration() != null)) {
-                System.out.println("[LOG] Không có kết quả, thử nới lỏng bộ lọc (giữ lại địa điểm)...");
-                ExtractedEntities relaxedEntities = new ExtractedEntities();
-                relaxedEntities.setLocation(entities.getLocation());
-                relaxedEntities.setKeywords(entities.getKeywords());
-
-                filteredTours = filterCandidates(candidateTours, relaxedEntities);
-                System.out.println("[LOG] Sau khi nới lỏng, còn lại: " + filteredTours.size() + " tour.");
-            }
-
+            // Bước 5: Trả về thông báo khi không có kết quả
             if (filteredTours.isEmpty()) {
-                return handleNoResults("Không tour nào vượt qua bộ lọc, kể cả khi đã nới lỏng", entities, candidateTours);
+                return Map.of("success", true, "response", "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.");
             }
 
             // Bước 6: Trả về kết quả
-            String action = (String) aiDecision.get("action");
             if ("single_result".equals(action) && !filteredTours.isEmpty()) {
                 Tour bestTour = filteredTours.stream()
                         .max(Comparator.comparing(Tour::getRating))
@@ -128,12 +125,13 @@ public class GeminiService {
                         "5.  `duration`: Chỉ trả về thời lượng nếu có (ví dụ: '3 ngày', 'cuối tuần'). Nếu không, BẮT BUỘC là null.\n\n" +
                         "### QUY TẮC QUYẾT ĐỊNH `action`:\n" +
                         "1.  `single_result`: Nếu câu hỏi chỉ đích danh 'một tour', '1 chuyến đi', hoặc hỏi về TÊN CỤ THỂ của một tour.\n" +
-                        "2.  `list_result`: MẶC ĐỊNH cho các trường hợp còn lại (hỏi chung chung, hỏi về danh sách, hỏi có bộ lọc).\n\n" +
+                        "2.  `list_result`: MẶC ĐỊNH cho các trường hợp còn lại (hỏi chung chung, hỏi về danh sách, hỏi có bộ lọc).\n" +
+                        "3.  `off_topic`: Nếu câu hỏi không liên quan đến chủ đề du lịch (ví dụ: 'bán tivi', 'bạn là ai', 'thời tiết hôm nay').\n\n" +
                         "### VÍ DỤ NÂNG CAO:\n" +
                         "- Câu hỏi: 'cho tôi 1 tour hạ long' -> { \"entities\": { \"keywords\": \"tour hạ long\", \"location\": \"hạ long\", ...}, \"action\": \"single_result\" }\n" +
                         "- Câu hỏi: 'các tour ở việt nam' -> { \"entities\": { \"keywords\": \"tour việt nam\", \"location\": \"việt nam\", ...}, \"action\": \"list_result\" }\n" +
-                        "- Câu hỏi: 'tour đi biển nào giá tầm 7 triệu không' -> { \"entities\": { \"keywords\": \"tour biển giá tốt\", \"location\": null, \"max_price\": 7000000, \"category\": \"biển\", ... }, \"action\": \"list_result\" }\n" +
-                        "- Câu hỏi: 'gợi ý tour cho gia đình đi Đà Nẵng dưới 15 triệu' -> { \"entities\": { \"keywords\": \"tour gia đình Đà Nẵng\", \"location\": \"Đà Nẵng\", \"max_price\": 15000000, \"category\": \"gia đình\", ... }, \"action\": \"list_result\" }\n\n" +
+                        "- Câu hỏi: 'bạn bán tivi không?' -> { \"entities\": { \"keywords\": \"tivi\" }, \"action\": \"off_topic\" }\n" +
+                        "- Câu hỏi: 'có tour sapa nào khoảng 7 triệu ko?' -> { \"entities\": { \"keywords\": \"tour sapa giá 7 triệu\", \"location\": \"sapa\", \"min_price\": 6000000, \"max_price\": 8000000 }, \"action\": \"list_result\" }\n\n" +
                         "### NGỮ CẢNH HỘI THOẠI:\n%s\n\n" +
                         "### CÂU HỎI MỚI NHẤT:\n\"%s\"\n\n" +
                         "### JSON KẾT QUẢ:\n",
@@ -154,9 +152,14 @@ public class GeminiService {
             entities.setLocation(locationNode.asText(null));
         }
 
-        JsonNode priceNode = entitiesNode.path("max_price");
-        if (!priceNode.isMissingNode() && !priceNode.isNull() && priceNode.isNumber()) {
-            entities.setMaxPrice(priceNode.asLong());
+        JsonNode minPriceNode = entitiesNode.path("min_price");
+        if (!minPriceNode.isMissingNode() && !minPriceNode.isNull() && minPriceNode.isNumber()) {
+            entities.setMinPrice(minPriceNode.asLong());
+        }
+
+        JsonNode maxPriceNode = entitiesNode.path("max_price");
+        if (!maxPriceNode.isMissingNode() && !maxPriceNode.isNull() && maxPriceNode.isNumber()) {
+            entities.setMaxPrice(maxPriceNode.asLong());
         }
 
         JsonNode categoryNode = entitiesNode.path("category");
@@ -173,9 +176,6 @@ public class GeminiService {
         return Map.of("entities", entities, "action", action);
     }
 
-    /**
-     * NÂNG CẤP CUỐI CÙNG: Logic lọc siêu linh hoạt.
-     */
     private List<Tour> filterCandidates(List<Tour> candidates, ExtractedEntities entities) {
         return candidates.stream()
                 .filter(tour -> {
@@ -192,7 +192,7 @@ public class GeminiService {
                         if (entities.getMaxPrice() != null && tour.getPrice() > entities.getMaxPrice()) {
                             priceMatch = false;
                         }
-                    } else { // Tour không có giá thì không khớp nếu có bộ lọc giá
+                    } else {
                         if(entities.getMinPrice() != null || entities.getMaxPrice() != null) priceMatch = false;
                     }
 
@@ -211,41 +211,10 @@ public class GeminiService {
     private Map<String, Object> handleNoResults(String reason, ExtractedEntities entities, List<Tour> initialCandidates) {
         System.out.println("----------- KẾT THÚC (Lý do: " + reason + ") -----------");
 
-        // Logic gợi ý thông minh
-        if (initialCandidates != null && !initialCandidates.isEmpty()) {
-            String suggestionPrompt = String.format(
-                    "Bạn là một trợ lý du lịch thân thiện. Khách hàng tìm kiếm tour với một số tiêu chí nhưng không có kết quả. Dựa vào yêu cầu ban đầu của khách và danh sách các tour GẦN GIỐNG, hãy đưa ra một lời gợi ý hữu ích và tự nhiên.\n\n" +
-                            "### QUY TẮC:\n" +
-                            "- Bắt đầu bằng 'Rất tiếc, tôi không tìm thấy tour nào khớp chính xác...'\n" +
-                            "- Đưa ra một gợi ý thay thế. Ví dụ: '...nhưng bạn có muốn xem các tour khác cũng ở %s không?' hoặc '...nhưng tôi có một vài lựa chọn đi biển khác rất thú vị:'.\n" +
-                            "- Trả lời ngắn gọn, không cần liệt kê lại tour.\n\n" +
-                            "### YÊU CẦU BAN ĐẦU:\n%s\n\n" +
-                            "### DANH SÁCH TOUR GẦN GIỐNG ĐỂ THAM KHẢO:\n" +
-                            "%s\n\n" +
-                            "### LỜI GỢI Ý CỦA BẠN:\n",
-                    entities != null ? entities.toString() : "Không có",
-                    initialCandidates.stream().map(Tour::getTitle).limit(5).collect(Collectors.joining("\n"))
-            );
-            try {
-                GenerateContentResponse response = client.models.generateContent("gemini-1.5-flash-latest", suggestionPrompt, null);
-                return Map.of("success", true, "response", response.text());
-            } catch (Exception e) {
-                // Fallback nếu có lỗi
-            }
-        }
+        String message = "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.";
+        return Map.of("success", true, "response", message);
+    }
 
-        String message = "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.";
-        return Map.of("success", true, "response", message);
-    }
-    // Các hàm tiện ích
-    private Map<String, Object> handleNoResults(String reason, String location) {
-        System.out.println("----------- KẾT THÚC (Lý do: " + reason + ") -----------");
-        String message = "Xin lỗi, tôi không tìm thấy tour nào phù hợp với các tiêu chí của bạn.";
-        if(StringUtils.hasText(location)){
-            message += String.format(" Bạn có muốn xem các tour khác ở %s không?", location);
-        }
-        return Map.of("success", true, "response", message);
-    }
     private Map<String, Object> handleSingleResult(Tour tour) {
         System.out.println("----------- KẾT THÚC (Lý do: Trả về 1 kết quả duy nhất) -----------");
         return formatBasicTourInfo(tour);
