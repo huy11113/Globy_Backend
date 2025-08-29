@@ -2,12 +2,19 @@ package com.example.SpringMongoProject.Service;
 
 import com.example.SpringMongoProject.Entity.User;
 import com.example.SpringMongoProject.Repo.UserRepository;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Collections;
 import java.util.Optional;
 import java.util.Random;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -15,11 +22,12 @@ public class AuthService {
     @Autowired
     private UserRepository userRepository;
 
-    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    @Value("${google.client.id}")
+    private String googleClientId;
 
-    /**
-     * Xử lý logic đăng ký người dùng mới.
-     */
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     public User register(User registrationData) {
         userRepository.findByPhoneNumber(registrationData.getPhoneNumber()).ifPresent(u -> {
             throw new IllegalStateException("Số điện thoại đã tồn tại.");
@@ -30,18 +38,24 @@ public class AuthService {
         newUser.setPhoneNumber(registrationData.getPhoneNumber());
         newUser.setEmail(registrationData.getEmail());
         newUser.setPassword(passwordEncoder.encode(registrationData.getPassword()));
+        newUser.setRole("user");
 
         return userRepository.save(newUser);
     }
 
     /**
      * Xử lý logic đăng nhập cho người dùng thường.
+     * (GIỮ LẠI PHIÊN BẢN NÀY)
      */
     public Optional<User> login(String phoneNumber, String password) {
         Optional<User> userOpt = userRepository.findByPhoneNumber(phoneNumber);
 
-        if (userOpt.isPresent() && passwordEncoder.matches(password, userOpt.get().getPassword())) {
-            return userOpt;
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            // Điều kiện kiểm tra người dùng có bị khóa hay không
+            if (passwordEncoder.matches(password, user.getPassword()) && !user.isSuspended()) {
+                return Optional.of(user);
+            }
         }
         return Optional.empty();
     }
@@ -54,17 +68,14 @@ public class AuthService {
 
         if (userOpt.isPresent()) {
             User user = userOpt.get();
-            // Điều kiện quan trọng: mật khẩu phải khớp VÀ vai trò phải là "admin"
             if (passwordEncoder.matches(password, user.getPassword()) && "admin".equalsIgnoreCase(user.getRole())) {
-                return Optional.of(user); // Đăng nhập admin thành công
+                return Optional.of(user);
             }
         }
-        return Optional.empty(); // Sai thông tin hoặc không có quyền admin
+        return Optional.empty();
     }
 
-    /**
-     * Gửi yêu cầu đặt lại mật khẩu.
-     */
+    // ... các hàm còn lại không đổi
     public void requestPasswordReset(String phoneNumber) {
         User user = userRepository.findByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new RuntimeException("Số điện thoại không tồn tại."));
@@ -76,9 +87,6 @@ public class AuthService {
         System.out.println("Mã xác nhận cho " + phoneNumber + " là: " + resetCode);
     }
 
-    /**
-     * Hoàn tất việc đặt lại mật khẩu mới.
-     */
     public boolean resetPassword(String phoneNumber, String resetCode, String newPassword) {
         User user = userRepository.findByPhoneNumberAndResetCode(phoneNumber, resetCode)
                 .orElseThrow(() -> new RuntimeException("Số điện thoại hoặc mã xác nhận không đúng."));
@@ -87,5 +95,35 @@ public class AuthService {
         user.setResetCode(null);
         userRepository.save(user);
         return true;
+    }
+
+    public User loginOrRegisterWithGoogle(String googleTokenString) {
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(googleTokenString);
+            if (idToken == null) {
+                throw new IllegalArgumentException("Token Google không hợp lệ.");
+            }
+
+            GoogleIdToken.Payload payload = idToken.getPayload();
+            String email = payload.getEmail();
+            String name = (String) payload.get("name");
+            String avatar = (String) payload.get("picture");
+
+            return userRepository.findByEmail(email).orElseGet(() -> {
+                User newUser = new User();
+                newUser.setEmail(email);
+                newUser.setName(name);
+                newUser.setAvatar(avatar);
+                newUser.setRole("user");
+                newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+                return userRepository.save(newUser);
+            });
+        } catch (Exception e) {
+            throw new RuntimeException("Xác thực Google thất bại: " + e.getMessage(), e);
+        }
     }
 }

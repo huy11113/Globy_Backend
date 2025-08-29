@@ -11,10 +11,13 @@ public class Payment {
     @Id
     private String id;
     private String userId;
-    private Double amount;
+
+    // ✅ THAY ĐỔI: Chuyển sang Long để lưu số tiền VNĐ
+    private Long amount;
+
     private String method; // "credit_card", "paypal", "momo"
     private String status = "pending";
     private Date paidAt;
-    private String bookingId;   // ID của Booking hoặc HotelBooking
+    private String bookingId;
     private String bookingModel; // "Booking" hoặc "HotelBooking"
 }

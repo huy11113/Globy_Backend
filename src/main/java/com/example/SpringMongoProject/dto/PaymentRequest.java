@@ -5,6 +5,9 @@ import lombok.Data;
 @Data
 public class PaymentRequest {
     private String bookingId;
-    private Double amount;
-    private String method; // "credit_card", "paypal", "momo"
+
+
+    private Long amount;
+
+    private String method;
 }

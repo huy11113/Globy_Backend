@@ -24,17 +24,13 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Bật CORS lên đầu
-                .csrf(csrf -> csrf.disable()) // Tắt CSRF
-                .authorizeHttpRequests(authorize -> authorize
-                        // --- Các API công khai cho trang chủ ---
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/tours/**").permitAll()
-                        .requestMatchers("/api/destinations/**").permitAll()
-                        // Tạm thời cho phép wishlist để test, sau này sẽ cần bảo vệ
-                        .requestMatchers("/api/wishlist/**").permitAll()
-                        // Các API khác yêu cầu đăng nhập (sẽ cấu hình sau với JWT)
-                        .anyRequest().authenticated()
+                // Bật CORS để cho phép frontend gọi tới
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                // Tắt CSRF vì chúng ta đang làm API
+                .csrf(csrf -> csrf.disable())
+                // PHẦN QUAN TRỌNG NHẤT: Cho phép TẤT CẢ các yêu cầu đi qua
+                .authorizeHttpRequests(auth -> auth
+                        .anyRequest().permitAll()
                 );
         return http.build();
     }
@@ -42,7 +38,16 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173"));
+
+        // SỬA Ở ĐÂY: Thêm tên miền mới của bạn
+        List<String> allowedOrigins = List.of(
+                "http://localhost:5173",
+                "https://globy-demo.vercel.app", // Giữ lại tên miền chính của Vercel
+                "https://www.globy-travel.website", // Thêm tên miền có www
+                "https://globy-travel.website" // Thêm tên miền không có www
+        );
+        configuration.setAllowedOrigins(allowedOrigins);
+
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

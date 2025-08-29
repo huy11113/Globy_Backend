@@ -9,4 +9,7 @@ import java.util.List;
 public interface ReviewRepository extends MongoRepository<Review, String> {
     // Tìm tất cả review của một tour cụ thể
     List<Review> findByTourId(String tourId);
+
+    // ✅ HÀM MỚI: Tìm các review được phép hiển thị của một tour
+    List<Review> findByTourIdAndIsVisibleTrue(String tourId);
 }
